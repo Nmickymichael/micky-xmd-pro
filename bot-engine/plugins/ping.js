@@ -1,0 +1,1 @@
+export async function ping({sock,msg}){const start=Date.now();const sent=await sock.sendMessage(msg.key.remoteJid,{text:"🏓 Pong…"});await sock.sendMessage(msg.key.remoteJid,{text:`🏓 ${Date.now()-start} ms`},{quoted:sent});}
