@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#090d16">
+  <title>MICKY-XMD PRO — Dashboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg:#090d16; --panel:#111827; --panel2:#0d1421; --line:#202c3e;
+      --text:#edf4ff; --muted:#8b9bb2; --cyan:#22d3ee; --green:#34d399;
+      --red:#fb7185; --amber:#fbbf24; --radius:18px;
+      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(ellipse at 80% -10%,#123149 0,transparent 34%),var(--bg);color:var(--text);min-height:100vh}
+    button,input,select{font:inherit}
+    button{cursor:pointer}
+    a{color:inherit;text-decoration:none}
+    .shell{display:grid;grid-template-columns:260px minmax(0,1fr);min-height:100vh}
+    .sidebar{background:rgba(9,13,22,.92);border-right:1px solid var(--line);padding:24px 16px;display:flex;flex-direction:column;gap:28px}
+    .brand{display:flex;align-items:center;gap:12px;padding:0 10px}
+    .logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(145deg,#22d3ee,#10b981);display:grid;place-items:center;color:#06111b;font-weight:900;letter-spacing:-2px;box-shadow:0 8px 30px #22d3ee30}
+    .brand strong{display:block;font-size:15px;letter-spacing:.12em}.brand small{color:var(--muted);font-size:10px;letter-spacing:.2em}
+    .nav-label{padding:0 12px;color:#60718b;font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+    nav{display:grid;gap:6px}
+    .nav-link{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;color:#9eacc0;font-size:13px;border:1px solid transparent;transition:.2s}
+    .nav-link:hover,.nav-link.active{background:#122333;color:#eafaff;border-color:#1d4052}
+    .nav-link.active{box-shadow:inset 3px 0 var(--cyan)}
+    .nav-icon{width:20px;text-align:center;color:var(--cyan);font-size:16px}
+    .sidebar-bottom{margin-top:auto;border:1px solid var(--line);background:var(--panel2);padding:14px;border-radius:14px}
+    .sidebar-bottom p{font-size:12px;color:var(--muted);line-height:1.5;margin:8px 0 12px}
+    .main{min-width:0;padding:26px clamp(16px,3vw,38px) 48px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:30px}
+    .crumb{color:var(--muted);font-size:12px}.crumb b{color:var(--text)}
+    .top-actions{display:flex;align-items:center;gap:10px}
+    .wallet-chip,.status-chip{border:1px solid var(--line);background:#111b2a;border-radius:999px;padding:10px 14px;font-size:12px;display:flex;align-items:center;gap:9px}
+    .wallet-chip strong{color:var(--green);font-size:14px}
+    .status-dot{width:7px;height:7px;background:var(--green);border-radius:50%;box-shadow:0 0 12px var(--green)}
+    .btn{border:0;border-radius:11px;padding:11px 15px;font-size:12px;font-weight:800;transition:.2s}
+    .btn-primary{background:linear-gradient(120deg,#22d3ee,#34d399);color:#04131a;box-shadow:0 8px 22px #22d3ee22}
+    .btn-primary:hover{filter:brightness(1.08);transform:translateY(-1px)}
+    .btn-secondary{background:#1a2638;color:#dce9f8;border:1px solid #2a3a50}
+    .btn-danger{background:#351a27;color:#fecdd3;border:1px solid #6a263b}
+    .btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+    .welcome{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-bottom:24px}
+    h1{font-size:clamp(25px,3vw,34px);margin:0 0 8px;letter-spacing:-.04em}
+    .sub{color:var(--muted);font-size:13px;margin:0;line-height:1.6}
+    .eyebrow{color:var(--cyan);font-size:10px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;margin-bottom:10px}
+    .grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px}
+    .card{background:linear-gradient(155deg,#131e2e,#0f1725);border:1px solid var(--line);border-radius:var(--radius);padding:20px;min-width:0;box-shadow:0 14px 35px #00000015}
+    .span-3{grid-column:span 3}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-7{grid-column:span 7}.span-8{grid-column:span 8}.span-12{grid-column:span 12}
+    .metric-label{color:var(--muted);font-size:12px}.metric{font-size:27px;font-weight:800;letter-spacing:-.04em;margin:12px 0 5px}.metric-foot{color:#72839a;font-size:11px}
+    .card-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
+    .card h2{font-size:15px;margin:0}.card-kicker{font-size:10px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase}
+    .pill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:#0b1420;color:#a9bad0;border-radius:999px;padding:6px 9px;font-size:10px}
+    .pill.good{color:var(--green);border-color:#1c5949;background:#0c241f}.pill.warn{color:var(--amber);border-color:#594a25;background:#241d0d}
+    .empty{padding:24px 14px;border:1px dashed #2a3a50;border-radius:14px;text-align:center;color:var(--muted);font-size:12px;line-height:1.7}
+    .empty strong{display:block;color:#dce8f8;font-size:14px;margin-bottom:5px}
+    .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .field{display:grid;gap:7px}.field.full{grid-column:1/-1}
+    label{font-size:11px;color:#aab8cb;font-weight:700}
+    input,select{width:100%;border:1px solid #29384c;background:#0a1220;color:var(--text);padding:12px 13px;border-radius:10px;outline:none;font-size:12px}
+    input:focus,select:focus{border-color:#22d3ee;box-shadow:0 0 0 3px #22d3ee18}
+    input::placeholder{color:#61728a}
+    .toggle-list{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}
+    .toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#0b1420;border:1px solid #202e41;border-radius:11px;padding:11px 12px}
+    .toggle span{font-size:11px;color:#c6d3e4}
+    .toggle input{appearance:none;width:34px;height:19px;padding:0;border-radius:20px;background:#344256;position:relative;cursor:pointer;flex:0 0 auto}
+    .toggle input:before{content:"";position:absolute;width:13px;height:13px;border-radius:50%;background:white;left:3px;top:3px;transition:.2s}
+    .toggle input:checked{background:#0891b2}.toggle input:checked:before{left:18px}
+    .deploy-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:17px}
+    .bot-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #202c3e}
+    .bot-row:last-child{border:0}.bot-title{font-size:12px;font-weight:800}.bot-meta{font-size:10px;color:var(--muted);margin-top:5px}
+    .modal-backdrop{position:fixed;inset:0;background:#02060dcc;display:none;place-items:center;padding:18px;z-index:10}
+    .modal-backdrop.open{display:grid}.modal{width:min(440px,100%);background:#111b2a;border:1px solid #2b3d52;border-radius:20px;padding:22px;box-shadow:0 30px 90px #0009}
+    .modal h2{margin:0 0 8px;font-size:18px}.modal p{font-size:12px;color:var(--muted);line-height:1.6}
+    .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+    .notice{font-size:11px;color:var(--muted);line-height:1.6;margin-top:12px}
+    .toast{position:fixed;right:20px;bottom:20px;max-width:min(380px,calc(100vw - 40px));padding:13px 16px;background:#142235;border:1px solid #31506b;border-radius:12px;color:#e8f5ff;font-size:12px;box-shadow:0 15px 40px #0008;display:none;z-index:20}
+    .toast.show{display:block}
+    .mobile-menu{display:none}
+    @media(max-width:1050px){.span-3{grid-column:span 6}.span-5,.span-7{grid-column:span 12}.span-4{grid-column:span 6}}
+    @media(max-width:760px){
+      .shell{grid-template-columns:1fr}.sidebar{position:fixed;z-index:8;inset:0 auto 0 0;width:270px;transform:translateX(-105%);transition:.25s;box-shadow:20px 0 50px #0008}.sidebar.open{transform:translateX(0)}
+      .mobile-menu{display:inline-flex}.main{padding:17px 14px 35px}.topbar{margin-bottom:23px}.top-actions{gap:7px}.status-chip{display:none}
+      .welcome{align-items:flex-start;flex-direction:column}.span-3,.span-4,.span-5,.span-7,.span-8{grid-column:span 12}
+      .form-grid,.toggle-list{grid-template-columns:1fr}.wallet-chip{padding:9px 10px}.wallet-chip strong{font-size:12px}
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="logo">MX</div>
+      <div><strong>MICKY-XMD</strong><small>PRO HOSTING</small></div>
+    </div>
+    <div>
+      <div class="nav-label">Workspace</div>
+      <nav aria-label="Main navigation">
+        <a class="nav-link active" href="#overview"><span class="nav-icon">⌂</span>Dashboard</a>
+        <a class="nav-link" href="/pair.html"><span class="nav-icon">⌁</span>Pair Session ID</a>
+        <a class="nav-link" href="#deploy"><span class="nav-icon">▶</span>Deploy Bot</a>
+        <a class="nav-link" href="#bots"><span class="nav-icon">▣</span>My Bots</a>
+        <a class="nav-link" href="#recovery"><span class="nav-icon">↻</span>Bot Recovery</a>
+        <a class="nav-link" href="#smm"><span class="nav-icon">✦</span>SMM Boosting</a>
+        <a class="nav-link" href="#wallet"><span class="nav-icon">◈</span>Top Up Wallet</a>
+        <a class="nav-link" href="#reseller"><span class="nav-icon">⌘</span>Reseller API</a>
+        <a class="nav-link" href="#settings"><span class="nav-icon">⚙</span>Settings</a>
+      </nav>
+    </div>
+    <div class="sidebar-bottom">
+      <span class="pill good"><span class="status-dot"></span> Workspace ready</span>
+      <p>Your bot sessions are isolated to your account. Keep your session IDs private.</p>
+      <button class="btn btn-secondary" style="width:100%" id="signOutBtn">Sign out</button>
+    </div>
+  </aside>
+
+  <main class="main" id="overview">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="btn btn-secondary mobile-menu" id="menuBtn" aria-label="Open menu">☰</button>
+        <div class="crumb">Workspace <span style="color:#52637a">/</span> <b>Dashboard</b></div>
+      </div>
+      <div class="top-actions">
+        <div class="status-chip"><span class="status-dot"></span> API connection <b id="apiStatus">Checking</b></div>
+        <div class="wallet-chip">Wallet <strong id="walletBalance">KES —</strong></div>
+        <button class="btn btn-primary" id="topUpBtn">＋ Top up</button>
+      </div>
+    </header>
+
+    <section class="welcome">
+      <div><div class="eyebrow">MICKY-XMD PRO / CONTROL CENTER</div><h1>Welcome to your workspace.</h1><p class="sub">Manage your WhatsApp deployments, automation and prepaid wallet from one place.</p></div>
+      <a class="btn btn-secondary" href="/pair.html">＋ Pair a WhatsApp account</a>
+    </section>
+
+    <section class="grid">
+      <article class="card span-3"><div class="metric-label">Wallet balance</div><div class="metric" id="metricBalance">KES —</div><div class="metric-foot">Prepaid hosting wallet</div></article>
+      <article class="card span-3"><div class="metric-label">Active bots</div><div class="metric" id="activeBots">—</div><div class="metric-foot">Currently running instances</div></article>
+      <article class="card span-3"><div class="metric-label">Paired sessions</div><div class="metric" id="pairedBots">—</div><div class="metric-foot">WhatsApp accounts linked</div></article>
+      <article class="card span-3"><div class="metric-label">Next expiry</div><div class="metric" id="nextExpiry">—</div><div class="metric-foot">Nearest subscription renewal</div></article>
+
+      <article class="card span-7" id="deploy">
+        <div class="card-head"><div><div class="card-kicker">Launch a worker</div><h2 style="margin-top:6px">Deploy your bot</h2></div><span class="pill">KES <span id="deployPrice">150</span> / 30 days</span></div>
+        <form id="deployForm">
+          <div class="form-grid">
+            <div class="field full"><label for="sessionId">Encrypted Session ID</label><input id="sessionId" name="sessionId" placeholder="MICKY~paste-your-private-token" autocomplete="off" required></div>
+            <div class="field"><label for="botName">Bot display name</label><input id="botName" name="botName" maxlength="40" placeholder="My MICKY-XMD bot" value="MICKY-XMD"></div>
+            <div class="field"><label for="prefix">Command prefix</label><input id="prefix" name="prefix" maxlength="5" value="." required></div>
+            <div class="field"><label for="botMode">Bot mode</label><select id="botMode"><option value="public">Public</option><option value="self">Self</option></select></div>
+            <div class="field"><label for="reactEmoji">Auto-react emoji</label><select id="reactEmoji"><option>❤️</option><option>🔥</option><option>💚</option><option>😂</option><option>😍</option><option>⚡</option></select></div>
+          </div>
+          <div class="toggle-list">
+            <label class="toggle"><span>Auto-view status (2–6s delay)</span><input type="checkbox" id="autoView"></label>
+            <label class="toggle"><span>Auto-react to status</span><input type="checkbox" id="autoReact"></label>
+            <label class="toggle"><span>Anti-delete cache</span><input type="checkbox" id="antiDelete"></label>
+            <label class="toggle"><span>Anti-link moderation</span><input type="checkbox" id="antiLink"></label>
+            <label class="toggle"><span>Always online presence</span><input type="checkbox" id="alwaysOnline"></label>
+            <label class="toggle"><span>Auto-read messages</span><input type="checkbox" id="autoRead"></label>
+          </div>
+          <p class="notice">Deployment is charged from your wallet only after the server validates the session and confirms the required balance. Status automation is rate-limited; no setting can guarantee immunity from WhatsApp restrictions.</p>
+          <div class="deploy-actions"><button class="btn btn-secondary" type="reset">Reset</button><button class="btn btn-primary" id="deploySubmit" type="submit">Deploy bot →</button></div>
+        </form>
+      </article>
+
+      <article class="card span-5" id="bots">
+        <div class="card-head"><div><div class="card-kicker">Your instances</div><h2 style="margin-top:6px">My Bots</h2></div><button class="btn btn-secondary" id="refreshBots">Refresh</button></div>
+        <div id="botList"><div class="empty"><strong>No bot data loaded</strong>Connect to your account to view your deployed instances.</div></div>
+      </article>
+
+      <article class="card span-4" id="wallet">
+        <div class="card-head"><div><div class="card-kicker">Prepaid balance</div><h2 style="margin-top:6px">Wallet activity</h2></div><span class="pill">KES</span></div>
+        <div class="empty"><strong>Transactions will appear here</strong>Top-ups and deployment charges will be retrieved from your account ledger.</div>
+        <button class="btn btn-primary" style="width:100%;margin-top:14px" id="walletTopUpBtn">Top up via M-Pesa</button>
+      </article>
+      <article class="card span-4" id="recovery">
+        <div class="card-head"><div><div class="card-kicker">Session health</div><h2 style="margin-top:6px">Bot Recovery</h2></div><span class="pill warn">Protected</span></div>
+        <p class="sub">Review disconnected sessions and request a controlled reconnect. Logged-out sessions require fresh WhatsApp pairing.</p>
+        <button class="btn btn-secondary" style="margin-top:16px" id="recoveryBtn">Check recovery status</button>
+      </article>
+      <article class="card span-4" id="settings">
+        <div class="card-head"><div><div class="card-kicker">Account</div><h2 style="margin-top:6px">Workspace settings</h2></div><span class="pill">Private</span></div>
+        <p class="sub">Manage your profile, command defaults, API access and account security.</p>
+        <button class="btn btn-secondary" style="margin-top:16px" id="settingsBtn">Open settings</button>
+      </article>
+      <article class="card span-12" id="reseller">
+        <div class="card-head"><div><div class="card-kicker">Developer tools</div><h2 style="margin-top:6px">Reseller API</h2></div><span class="pill">Coming online in a later module</span></div>
+        <p class="sub">Generate and manage scoped API keys after reseller access is enabled. Secret keys will only be shown once and will never be stored in plaintext.</p>
+      </article>
+    </section>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="topUpModal" role="dialog" aria-modal="true" aria-labelledby="topUpTitle">
+  <div class="modal">
+    <h2 id="topUpTitle">Top up your wallet</h2>
+    <p>Enter the amount and Safaricom number to initiate an M-Pesa STK Push. Your balance changes only after a verified payment callback.</p>
+    <form id="topUpForm">
+      <div class="field"><label for="topupAmount">Amount (KES)</label><input id="topupAmount" type="number" min="10" max="150000" step="1" value="150" required></div>
+      <div class="field" style="margin-top:12px"><label for="mpesaPhone">M-Pesa phone number</label><input id="mpesaPhone" type="tel" placeholder="2547XXXXXXXX" pattern="254[17][0-9]{8}" required></div>
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" id="closeTopUp">Cancel</button><button class="btn btn-primary" id="stkSubmit" type="submit">Send STK Push</button></div>
+    </form>
+    <div class="notice" id="paymentMessage" aria-live="polite"></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const API = "/api";
+  const toast = (message) => {
+    $("toast").textContent = message;
+    $("toast").classList.add("show");
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => $("toast").classList.remove("show"), 4200);
+  };
+  async function api(path, options = {}) {
+    const response = await fetch(API + path, {
+      credentials: "include",
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      ...options
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.message || body.error || `Request failed (${response.status})`);
+    return body;
+  }
+  function money(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? "KES " + n.toLocaleString("en-KE", {minimumFractionDigits:2, maximumFractionDigits:2}) : "KES —";
+  }
+  function setBalance(value) {
+    $("walletBalance").textContent = money(value);
+    $("metricBalance").textContent = money(value);
+  }
+  function safeDate(value) {
+    if (!value) return "No expiry";
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-KE", {day:"numeric",month:"short",year:"numeric"});
+  }
+  async function loadOverview() {
+    try {
+      const data = await api("/dashboard");
+      $("apiStatus").textContent = "Connected";
+      $("apiStatus").previousElementSibling?.classList.add("status-dot");
+      setBalance(data.wallet?.balance);
+      const bots = data.bots || [];
+      $("activeBots").textContent = bots.filter(b => b.bot_status === "running").length;
+      $("pairedBots").textContent = bots.filter(b => b.connection_status === "connected").length;
+      const expiries = bots.map(b => b.expires_at).filter(Boolean).sort();
+      $("nextExpiry").textContent = expiries.length ? safeDate(expiries[0]) : "—";
+      renderBots(bots);
+    } catch (error) {
+      $("apiStatus").textContent = "Sign in";
+      $("botList").innerHTML = '<div class="empty"><strong>Dashboard API not connected</strong>' + escapeHtml(error.message) + '<br>Sign in or finish the backend dashboard endpoint.</div>';
+    }
+  }
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+  function renderBots(bots) {
+    if (!bots.length) {
+      $("botList").innerHTML = '<div class="empty"><strong>No deployed bots yet</strong>Pair a WhatsApp account, then deploy your first worker.</div>';
+      return;
+    }
+    $("botList").innerHTML = bots.map(bot => `
+      <div class="bot-row">
+        <div><div class="bot-title">${escapeHtml(bot.bot_name || "MICKY-XMD")}</div>
+        <div class="bot-meta">${escapeHtml(bot.whatsapp_number || "Number not available")} · Expires ${escapeHtml(safeDate(bot.expires_at))}</div></div>
+        <span class="pill ${bot.bot_status === "running" ? "good" : "warn"}">${escapeHtml(bot.bot_status || "unknown")}</span>
+      </div>`).join("");
+  }
+  function openTopUp() { $("topUpModal").classList.add("open"); $("topupAmount").focus(); }
+  function closeTopUp() { $("topUpModal").classList.remove("open"); }
+  $("topUpBtn").addEventListener("click", openTopUp);
+  $("walletTopUpBtn").addEventListener("click", openTopUp);
+  $("closeTopUp").addEventListener("click", closeTopUp);
+  $("topUpModal").addEventListener("click", e => { if (e.target === $("topUpModal")) closeTopUp(); });
+  $("menuBtn").addEventListener("click", () => $("sidebar").classList.toggle("open"));
+  document.querySelectorAll(".nav-link").forEach(a => a.addEventListener("click", () => $("sidebar").classList.remove("open")));
+  $("refreshBots").addEventListener("click", loadOverview);
+
+  $("deployForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = $("deploySubmit");
+    const sessionId = $("sessionId").value.trim();
+    if (!/^MICKY~[A-Za-z0-9_-]{20,}$/.test(sessionId)) {
+      toast("Enter a valid MICKY~ encrypted session token.");
+      $("sessionId").focus();
+      return;
+    }
+    const payload = {
+      session_id: sessionId,
+      bot_name: $("botName").value.trim() || "MICKY-XMD",
+      command_prefix: $("prefix").value,
+      bot_mode: $("botMode").value,
+      auto_view_status: $("autoView").checked,
+      auto_view_delay_min: 2,
+      auto_view_delay_max: 6,
+      auto_react_status: $("autoReact").checked,
+      auto_react_emoji: [$("reactEmoji").value],
+      anti_delete_enabled: $("antiDelete").checked,
+      anti_link_enabled: $("antiLink").checked,
+      always_online: $("alwaysOnline").checked,
+      auto_read: $("autoRead").checked
+    };
+    button.disabled = true; button.textContent = "Validating & deploying…";
+    try {
+      const result = await api("/bots/deploy", {method:"POST", body:JSON.stringify(payload)});
+      toast(result.message || "Deployment request accepted.");
+      $("deployForm").reset();
+      loadOverview();
+    } catch (error) { toast(error.message); }
+    finally { button.disabled = false; button.textContent = "Deploy bot →"; }
+  });
+
+  $("topUpForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = $("stkSubmit");
+    const amount = Number($("topupAmount").value);
+    const phone = $("mpesaPhone").value.trim();
+    if (!Number.isInteger(amount) || amount < 10 || amount > 150000 || !/^254[17]\d{8}$/.test(phone)) {
+      $("paymentMessage").textContent = "Check the amount and enter a valid Kenyan M-Pesa number, e.g. 2547XXXXXXXX.";
+      return;
+    }
+    button.disabled = true; button.textContent = "Sending…";
+    $("paymentMessage").textContent = "Contacting the payment service…";
+    try {
+      const result = await api("/payments/stk", {method:"POST", body:JSON.stringify({amount, phone_number:phone})});
+      $("paymentMessage").textContent = result.message || "STK Push requested. Check your phone and enter your M-Pesa PIN.";
+    } catch (error) { $("paymentMessage").textContent = error.message; }
+    finally { button.disabled = false; button.textContent = "Send STK Push"; }
+  });
+
+  $("recoveryBtn").addEventListener("click", async () => {
+    try {
+      const result = await api("/bots/recovery");
+      toast(result.message || "Recovery status refreshed.");
+    } catch (e) { toast(e.message); }
+  });
+  $("settingsBtn").addEventListener("click", () => toast("Account settings will be connected in the backend integration step."));
+  $("signOutBtn").addEventListener("click", async () => {
+    try { await api("/auth/logout", {method:"POST", body:"{}"}); location.href="/login.html"; }
+    catch (e) { toast(e.message); }
+  });
+
+  loadOverview();
+})();
+</script>
+</body>
+</html>
