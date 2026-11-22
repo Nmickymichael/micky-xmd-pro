@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#090d16">
+  <title>Pair WhatsApp — MICKY-XMD PRO</title>
+  <style>
+    :root{color-scheme:dark;--bg:#090d16;--panel:#111827;--line:#263449;--text:#edf4ff;--muted:#91a1b8;--cyan:#22d3ee;--green:#34d399;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% 0,#12364a 0,transparent 40%),var(--bg);color:var(--text);display:flex;flex-direction:column}
+    a{color:inherit;text-decoration:none}.top{height:76px;padding:0 clamp(18px,5vw,70px);display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1b293a;background:#090d16aa}
+    .brand{display:flex;align-items:center;gap:11px}.logo{width:39px;height:39px;border-radius:13px;background:linear-gradient(145deg,#22d3ee,#34d399);display:grid;place-items:center;color:#06131a;font-weight:900}.brand b{font-size:14px;letter-spacing:.12em}.brand small{display:block;color:#8b9bb2;font-size:9px;letter-spacing:.18em;margin-top:3px}
+    .top-link{font-size:12px;color:#b9c8db}.top-link:hover{color:var(--cyan)}
+    main{width:min(1060px,calc(100% - 32px));margin:54px auto 60px;flex:1}
+    .intro{text-align:center;margin-bottom:34px}.eyebrow{font-size:10px;letter-spacing:.2em;color:var(--cyan);font-weight:800}.intro h1{font-size:clamp(28px,5vw,43px);letter-spacing:-.05em;margin:13px 0 10px}.intro p{font-size:13px;line-height:1.7;color:var(--muted);max-width:590px;margin:auto}
+    .layout{display:grid;grid-template-columns:1.05fr .95fr;gap:18px;align-items:stretch}
+    .card{background:linear-gradient(155deg,#141f30,#0f1725);border:1px solid var(--line);border-radius:22px;padding:clamp(20px,3vw,30px);box-shadow:0 20px 60px #0003}
+    .card h2{font-size:17px;margin:0 0 8px}.muted{color:var(--muted);font-size:12px;line-height:1.7}
+    .steps{display:flex;gap:8px;margin:24px 0}.step{flex:1;border:1px solid #29384c;background:#0b1420;padding:10px;border-radius:11px;color:#91a1b8;font-size:10px}.step b{display:block;color:#dce9f7;font-size:12px;margin-bottom:4px}.step.active{border-color:#1d7182;background:#102a37}
+    label{display:block;font-size:11px;font-weight:700;color:#c1cfe0;margin:20px 0 8px}
+    input{width:100%;background:#091220;border:1px solid #2b3b50;color:#fff;border-radius:12px;padding:15px 14px;font-size:14px;outline:none}input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px #22d3ee18}input::placeholder{color:#5f7189}
+    .hint{font-size:10px;color:#75869d;margin-top:8px;line-height:1.6}
+    .btn{border:0;border-radius:12px;padding:14px 17px;font-weight:800;font-size:12px;cursor:pointer;transition:.2s}.primary{background:linear-gradient(120deg,#22d3ee,#34d399);color:#04131a}.primary:hover{filter:brightness(1.08);transform:translateY(-1px)}.secondary{background:#1b293c;border:1px solid #30435c;color:#e0eaf7}.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+    .full{width:100%;margin-top:18px}.result{display:none;margin-top:20px;border:1px solid #1b5a4b;background:#0b211d;border-radius:14px;padding:16px}.result.show{display:block}.result-title{color:var(--green);font-weight:800;font-size:12px}.code{font-size:clamp(20px,4vw,28px);font-weight:900;letter-spacing:.08em;overflow-wrap:anywhere;margin:12px 0;color:#dffcf3}
+    .copy-row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.session{font-size:11px;color:#a9c8bf;overflow-wrap:anywhere;flex:1;min-width:160px}
+    .qr-card{display:flex;flex-direction:column;align-items:center;text-align:center}.qr-placeholder{width:min(250px,100%);aspect-ratio:1;background:#f8fafc;border-radius:16px;display:grid;place-items:center;margin:23px auto 16px;color:#0c1723;padding:18px}
+    .qr-placeholder img{width:100%;height:100%;object-fit:contain}.qr-placeholder .qr-mark{font-size:56px;font-weight:900;letter-spacing:-.1em;color:#0b2634}
+    .qr-status{font-size:11px;color:#9db0c8;min-height:18px}.qr-note{font-size:10px;color:#71839a;line-height:1.6;max-width:300px}
+    .security{margin-top:18px;padding:13px;border:1px solid #26364a;border-radius:12px;background:#0b1420;color:#91a1b8;font-size:10px;line-height:1.7}
+    .security b{color:#cfe0f2}.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#142235;border:1px solid #31506b;border-radius:12px;padding:12px 16px;color:#e8f5ff;font-size:12px;display:none;max-width:calc(100% - 30px)}.toast.show{display:block}
+    footer{text-align:center;color:#60718a;font-size:10px;padding:20px}
+    @media(max-width:760px){main{margin:35px auto}.layout{grid-template-columns:1fr}.top{height:66px}.intro{margin-bottom:24px}.qr-card{min-height:400px}}
+  </style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/dashboard.html"><span class="logo">MX</span><span><b>MICKY-XMD</b><small>PRO HOSTING</small></span></a>
+  <a class="top-link" href="/dashboard.html">← Back to dashboard</a>
+</header>
+<main>
+  <section class="intro">
+    <div class="eyebrow">SECURE WHATSAPP LINKING</div>
+    <h1>Pair your WhatsApp account.</h1>
+    <p>Generate a one-time WhatsApp linking code and create an encrypted MICKY-XMD session token for your private hosting workspace.</p>
+  </section>
+
+  <section class="layout">
+    <article class="card">
+      <h2>Generate Session ID</h2>
+      <p class="muted">Use the phone number connected to the WhatsApp account you own and want to link.</p>
+      <div class="steps">
+        <div class="step active"><b>01 · Number</b>Enter WhatsApp number</div>
+        <div class="step"><b>02 · Link</b>Confirm in WhatsApp</div>
+        <div class="step"><b>03 · Save</b>Secure your session</div>
+      </div>
+      <form id="pairForm">
+        <label for="phone">WhatsApp phone number</label>
+        <input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="2547XXXXXXXX" pattern="254[17][0-9]{8}" required>
+        <div class="hint">Use international format without +, spaces or hyphens. Example: 254712345678.</div>
+        <button class="btn primary full" id="generateBtn" type="submit">Generate pairing code →</button>
+      </form>
+      <div class="result" id="pairResult" aria-live="polite">
+        <div class="result-title">Your WhatsApp linking code</div>
+        <div class="code" id="pairCode">—</div>
+        <div class="copy-row"><button class="btn secondary" id="copyCode" type="button">Copy code</button><span class="muted">Enter this code in WhatsApp's Linked Devices screen.</span></div>
+        <div class="security" style="margin-top:14px"><b>Session ID</b><div class="session" id="sessionId" style="margin-top:7px"></div><div style="margin-top:10px"><button class="btn secondary" id="copySession" type="button">Copy Session ID</button></div></div>
+      </div>
+      <div class="security"><b>Security reminder</b><br>Your session ID is a private credential. Do not share it, post it publicly or send it to anyone claiming to offer support. The token does not contain readable WhatsApp credentials.</div>
+    </article>
+
+    <article class="card qr-card">
+      <div style="width:100%;text-align:left"><div class="eyebrow">PAIRING ALTERNATIVE</div><h2 style="margin-top:8px">QR code pairing</h2><p class="muted">If QR pairing is enabled by the server, scan the live QR code from WhatsApp → Linked Devices.</p></div>
+      <div class="qr-placeholder" id="qrBox"><div class="qr-mark">MX</div></div>
+      <div class="qr-status" id="qrStatus">Waiting for a pairing request.</div>
+      <button class="btn secondary full" style="max-width:260px" id="refreshQr" type="button">Refresh QR status</button>
+      <p class="qr-note">QR codes are temporary and should only be scanned by the WhatsApp account owner. Never scan a code sent by an unknown person.</p>
+    </article>
+  </section>
+</main>
+<footer>© <span id="year"></span> MICKY-XMD PRO · Secure multi-device hosting</footer>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const API = "/api";
+  let currentCode = "";
+  let currentSession = "";
+  const toast = message => {
+    $("toast").textContent = message; $("toast").classList.add("show");
+    clearTimeout(toast.timer); toast.timer = setTimeout(() => $("toast").classList.remove("show"), 4000);
+  };
+  async function request(path, options = {}) {
+    const response = await fetch(API + path, {
+      credentials:"include",
+      headers:{"Content-Type":"application/json", ...(options.headers || {})},
+      ...options
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.message || body.error || `Request failed (${response.status})`);
+    return body;
+  }
+  $("year").textContent = new Date().getFullYear();
+  $("pairForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const phone = $("phone").value.trim();
+    if (!/^254[17]\d{8}$/.test(phone)) { toast("Enter a valid Kenyan mobile number, e.g. 254712345678."); return; }
+    const button = $("generateBtn");
+    button.disabled = true; button.textContent = "Requesting secure pairing…";
+    $("pairResult").classList.remove("show");
+    $("qrStatus").textContent = "Requesting a temporary pairing session…";
+    try {
+      const data = await request("/pair", {method:"POST", body:JSON.stringify({phone_number:phone})});
+      currentCode = String(data.pairing_code || "");
+      currentSession = String(data.session_id || "");
+      if (!/^\d{8}$/.test(currentCode) || !/^MICKY~[A-Za-z0-9_-]{20,}$/.test(currentSession)) {
+        throw new Error("The server returned an incomplete pairing response. Please retry.");
+      }
+      $("pairCode").textContent = currentCode.replace(/(\d{4})(\d{4})/, "$1 $2");
+      $("sessionId").textContent = currentSession;
+      $("pairResult").classList.add("show");
+      $("qrStatus").textContent = "Pairing code generated. Complete linking in WhatsApp.";
+      toast(data.message || "Pairing code generated. Complete the WhatsApp linking steps.");
+    } catch (error) {
+      $("qrStatus").textContent = "Pairing request could not be completed.";
+      toast(error.message);
+    } finally {
+      button.disabled = false; button.textContent = "Generate pairing code →";
+    }
+  });
+  $("copyCode").addEventListener("click", async () => {
+    if (!currentCode) return;
+    try { await navigator.clipboard.writeText(currentCode); toast("Pairing code copied."); }
+    catch { toast("Clipboard unavailable. Select and copy the code manually."); }
+  });
+  $("copySession").addEventListener("click", async () => {
+    if (!currentSession) return;
+    try { await navigator.clipboard.writeText(currentSession); toast("Session ID copied. Keep it private."); }
+    catch { toast("Clipboard unavailable. Select and copy the Session ID manually."); }
+  });
+  $("refreshQr").addEventListener("click", async () => {
+    $("qrStatus").textContent = "Checking QR pairing availability…";
+    try {
+      const data = await request("/pair/qr");
+      if (data.qr_data_url) {
+        const img = document.createElement("img");
+        img.alt = "Temporary WhatsApp pairing QR code";
+        img.src = data.qr_data_url;
+        $("qrBox").replaceChildren(img);
+        $("qrStatus").textContent = "QR code ready. Scan it promptly from WhatsApp Linked Devices.";
+      } else {
+        $("qrStatus").textContent = data.message || "No active QR pairing session. Generate a pairing request first.";
+      }
+    } catch (error) { $("qrStatus").textContent = error.message; }
+  });
+})();
+</script>
+</body>
+</html>
