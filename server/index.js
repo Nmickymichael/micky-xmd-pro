@@ -141,7 +141,7 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
    res.json({ok:true,pairing_code:normalizedCode,session_id:sessionToken,bot_id:row.id,message:"Enter the pairing code in WhatsApp. Copy the session ID now; it is shown only once."});
   }catch(err){
    const failedStage=stage;const pending=pendingPairings.get(row.id);if(pending){pending.closing=true;pendingPairings.delete(row.id);}
-   try{sock?.end(undefined);}catch{}
+   try{(pending?.sock||sock)?.end(undefined);}catch{}
    const {error:stateError}=await admin.from("bot_instances").update({connection_status:"error",bot_status:"error",is_active:false,metadata:{pairing_failed_at:new Date().toISOString(),pairing_request_id:requestId,pairing_failure_stage:failedStage}}).eq("id",row.id);
    if(stateError)logger.error({err:stateError,requestId,botId:row.id,failedStage},"Could not persist pairing failure state");
    logger.error({err,requestId,botId:row.id,phoneLast4,failedStage},"WhatsApp pairing request failed");
