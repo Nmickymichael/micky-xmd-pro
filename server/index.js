@@ -38,7 +38,7 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
    catch(err){logger.warn({err,requestId,botId},"Could not render WhatsApp QR code");}
   }
   if(update.connection==="open"){
-   const activePair=pendingPairings.get(botId);if(activePair)activePair.restartAttempts=0;
+   const activePair=pendingPairings.get(botId);if(activePair){activePair.restartAttempts=0;activePair.connected=true;activePair.connection="open";activePair.qr=null;}
    const jid=sock.user?.id||null;
    const {error}=await admin.from("bot_instances").update({connection_status:"connected",bot_status:"stopped",whatsapp_jid:jid,connected_at:new Date().toISOString(),auth_state_ciphertext:remote.exportEncrypted(),metadata:{pairing_completed_at:new Date().toISOString()}}).eq("id",botId);
    if(error)logger.error({err:error,requestId,botId},"Failed to persist paired WhatsApp session");
@@ -47,6 +47,7 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
   if(update.connection==="close"){
    const p=pendingPairings.get(botId);
    const error=update.lastDisconnect?.error;
+   if(p){p.connection="close";p.lastError=error?.message||"WhatsApp socket closed";}
    const code=new Boom(error||new Error("WhatsApp socket closed")).output?.statusCode;
    if(p?.closing)return;
    if(code===DisconnectReason.restartRequired){
@@ -152,7 +153,7 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
  try{
   const {phone_number}=z.object({phone_number:phoneSchema}).parse(req.body);const phone=normalPhone(phone_number);phoneLast4=phone.slice(-4);
   stage="close_previous_pending_pairings";
-  for(const [existingId,existing] of pendingPairings){if(existing.userId===req.user.id){existing.closing=true;try{existing.sock.end(undefined);}catch{}pendingPairings.delete(existingId);const {error:closeError}=await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",existingId);if(closeError)logger.warn({err:closeError,requestId,botId:existingId},"Could not mark previous pairing as disconnected");}}
+  for(const [existingId,existing] of pendingPairings){if(existing.userId===req.user.id&&!existing.connected){existing.closing=true;try{existing.sock.end(undefined);}catch{}pendingPairings.delete(existingId);const {error:closeError}=await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",existingId);if(closeError)logger.warn({err:closeError,requestId,botId:existingId},"Could not mark previous pairing as disconnected");}}
   stage="create_bot_record";
   const sessionToken=randomSessionToken(),tokenHash=sha256(sessionToken);
   const {data:row,error}=await admin.from("bot_instances").insert({user_id:req.user.id,bot_name:"My MICKY-XMD Bot",session_id_hash:tokenHash,session_last4:sessionToken.slice(-4),whatsapp_number:phone,connection_status:"pairing",bot_status:"stopped",is_active:false,metadata:{pairing_requested_at:new Date().toISOString(),pairing_request_id:requestId}}).select("id").single();
@@ -199,11 +200,47 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
   }
  }catch(err){logger.error({err,requestId,botId,phoneLast4,stage},"Pairing API request failed");next(err);}
 });
+app.post("/api/pair/qr",authenticate,async(req,res,next)=>{
+ const requestId=randomUUID();let botId=null;let phoneLast4=null;
+ try{
+  for(const [existingId,existing] of pendingPairings){
+   if(existing.userId===req.user.id&&!existing.connected){
+    existing.closing=true;try{existing.sock?.end(undefined);}catch{}
+    pendingPairings.delete(existingId);
+    await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",existingId);
+   }
+  }
+  const sessionToken=randomSessionToken(),tokenHash=sha256(sessionToken);
+  const {data:row,error}=await admin.from("bot_instances").insert({
+   user_id:req.user.id,bot_name:"My MICKY-XMD Bot",session_id_hash:tokenHash,
+   session_last4:sessionToken.slice(-4),connection_status:"pairing",bot_status:"stopped",
+   is_active:false,metadata:{pairing_method:"qr",pairing_requested_at:new Date().toISOString(),pairing_request_id:requestId}
+  }).select("id").single();
+  if(error)throw error;botId=row.id;
+  const remote=await createRemoteAuthState(row.id);
+  pendingPairings.set(row.id,{sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false,connected:false,connection:"connecting",lastError:null,restartAttempts:0,method:"qr"});
+  const sock=attachPairingSocket({botId:row.id,remote,requestId,phoneLast4});
+  await remote.saveCreds();
+  logger.info({requestId,botId:row.id,method:"qr"},"Started fresh WhatsApp QR pairing session");
+  return res.json({ok:true,bot_id:row.id,session_id:sessionToken,message:"A fresh QR session has started. Keep this Session ID private; it is shown only once."});
+ }catch(err){
+  logger.error({err,requestId,botId},"Could not start WhatsApp QR pairing session");
+  if(botId){
+   const pending=pendingPairings.get(botId);if(pending){pending.closing=true;pendingPairings.delete(botId);}
+   try{pending?.sock?.end(undefined);}catch{}
+   await admin.from("bot_instances").update({connection_status:"error",bot_status:"error",is_active:false,metadata:{pairing_method:"qr",pairing_failed_at:new Date().toISOString(),pairing_request_id:requestId}}).eq("id",botId);
+  }
+  next(err);
+ }
+});
 app.get("/api/pair/qr",authenticate,async(req,res,next)=>{try{
  const {data:bot,error}=await admin.from("bot_instances").select("id").eq("user_id",req.user.id).eq("connection_status","pairing").order("created_at",{ascending:false}).limit(1).maybeSingle();
  if(error)throw error;if(!bot)return res.status(404).json({error:"No active pairing request"});
- const pending=pendingPairings.get(bot.id);if(!pending?.qr)return res.status(202).json({message:"QR is not ready. Use the WhatsApp pairing code instead."});
- res.json({qr_data_url:pending.qr});
+ const pending=pendingPairings.get(bot.id);if(!pending)return res.status(404).json({error:"Pairing process is not running. Start a fresh QR session."});
+ if(pending.connected)return res.json({connected:true,message:"WhatsApp account connected successfully."});
+ if(pending.closed)return res.status(410).json({error:"WhatsApp pairing connection closed. Start a fresh QR session."});
+ if(!pending.qr)return res.status(202).json({message:"QR is still being generated. Keep waiting.",connection:pending.connection||"connecting"});
+ res.json({qr_data_url:pending.qr,connection:pending.connection||"connecting"});
 }catch(e){next(e);}});
 app.post("/api/bots/deploy",authenticate,async(req,res,next)=>{try{
  const input=z.object({session_id:z.string().regex(/^MICKY~[A-Za-z0-9_-]{20,}$/),bot_name:z.string().min(2).max(48).optional(),command_prefix:z.string().min(1).max(3).optional(),bot_mode:z.enum(["public","self"]).optional(),auto_view_status:z.boolean().optional(),auto_react_status:z.boolean().optional(),anti_delete_enabled:z.boolean().optional(),anti_link_enabled:z.boolean().optional(),auto_read:z.boolean().optional(),always_online:z.boolean().optional(),auto_react_emoji:z.string().min(1).max(8).optional()}).parse(req.body);
