@@ -79,6 +79,13 @@ async function ensureProfile(user){
  if(walletError)throw walletError;
 }
 app.get("/health",(_req,res)=>res.json({ok:true,service:"micky-xmd-web",time:new Date().toISOString()}));
+async function cleanupStalePairingRows(){
+ const cutoff=new Date(Date.now()-10*60*1000).toISOString();
+ const {data,error}=await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("connection_status","pairing").lt("created_at",cutoff).select("id");
+ if(error)logger.error({err:error},"Could not clean up stale WhatsApp pairing records");
+ else if(data?.length)logger.info({count:data.length},"Cleaned up stale WhatsApp pairing records");
+}
+cleanupStalePairingRows().catch(err=>logger.error({err},"Stale pairing cleanup failed at startup"));
 setInterval(async()=>{const cutoff=Date.now()-10*60*1000;for(const [botId,pair] of pendingPairings){if(pair.tokenShownAt<cutoff){pair.closing=true;try{pair.sock.end(undefined);}catch{}pendingPairings.delete(botId);await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",botId);}}},60_000).unref();
 app.post("/api/auth/signup",async(req,res,next)=>{try{
  const {email,password}=z.object({email:z.string().email(),password:z.string().min(8)}).parse(req.body);
