@@ -1,0 +1,68 @@
+services:
+  - type: web
+    name: micky-xmd-pro-web
+    runtime: node
+    plan: starter
+    region: frankfurt
+    branch: main
+    buildCommand: npm install
+    startCommand: npm run start:web
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - fromGroup: micky-xmd-pro-shared
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_COOKIE_NAME
+        value: micky_access
+      - key: MPESA_ENV
+        value: sandbox
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_SHORTCODE
+        sync: false
+      - key: MPESA_PASSKEY
+        sync: false
+      - key: MPESA_TRANSACTION_TYPE
+        value: CustomerPayBillOnline
+      - key: MPESA_CALLBACK_URL
+        sync: false
+      - key: MPESA_CALLBACK_SECRET
+        generateValue: true
+  - type: worker
+    name: micky-xmd-pro-worker
+    runtime: node
+    plan: starter
+    region: frankfurt
+    branch: main
+    buildCommand: npm install
+    startCommand: npm run start:bot
+    autoDeploy: true
+    envVars:
+      - fromGroup: micky-xmd-pro-shared
+      - key: NODE_ENV
+        value: production
+      - key: WORKER_POLL_MS
+        value: "15000"
+      - key: LOG_LEVEL
+        value: info
+      - key: AI_BASE_URL
+        value: https://api.openai.com/v1
+      - key: AI_MODEL
+        value: gpt-4o-mini
+      - key: AI_API_KEY
+        sync: false
+
+envVarGroups:
+  - name: micky-xmd-pro-shared
+    envVars:
+      - key: SUPABASE_URL
+        value: https://dtibowvdocfqihrgpdvk.supabase.co
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SESSION_ENCRYPTION_KEY
+        generateValue: true
