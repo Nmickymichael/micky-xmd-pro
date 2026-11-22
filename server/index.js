@@ -234,7 +234,7 @@ app.post("/api/pair/qr",authenticate,async(req,res,next)=>{
  }
 });
 app.get("/api/pair/qr",authenticate,async(req,res,next)=>{try{
- const {data:bot,error}=await admin.from("bot_instances").select("id").eq("user_id",req.user.id).eq("connection_status","pairing").order("created_at",{ascending:false}).limit(1).maybeSingle();
+ const {data:bot,error}=await admin.from("bot_instances").select("id").eq("user_id",req.user.id).in("connection_status",["pairing","connected"]).order("created_at",{ascending:false}).limit(1).maybeSingle();
  if(error)throw error;if(!bot)return res.status(404).json({error:"No active pairing request"});
  const pending=pendingPairings.get(bot.id);if(!pending)return res.status(404).json({error:"Pairing process is not running. Start a fresh QR session."});
  if(pending.connected)return res.json({connected:true,message:"WhatsApp account connected successfully."});
