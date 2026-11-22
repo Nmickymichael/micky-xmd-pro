@@ -73,7 +73,7 @@
       <div style="width:100%;text-align:left"><div class="eyebrow">PAIRING ALTERNATIVE</div><h2 style="margin-top:8px">QR code pairing</h2><p class="muted">If QR pairing is enabled by the server, scan the live QR code from WhatsApp → Linked Devices.</p></div>
       <div class="qr-placeholder" id="qrBox"><div class="qr-mark">MX</div></div>
       <div class="qr-status" id="qrStatus">Waiting for a pairing request.</div>
-      <button class="btn secondary full" style="max-width:260px" id="refreshQr" type="button">Refresh QR status</button>
+      <button class="btn secondary full" style="max-width:260px" id="refreshQr" type="button">Start / Refresh QR pairing</button>
       <p class="qr-note">QR codes are temporary and should only be scanned by the WhatsApp account owner. Never scan a code sent by an unknown person.</p>
     </article>
   </section>
@@ -149,19 +149,49 @@
     catch { toast("Clipboard unavailable. Select and copy the Session ID manually."); }
   });
   $("refreshQr").addEventListener("click", async () => {
-    $("qrStatus").textContent = "Checking QR pairing availability…";
+    const button = $("refreshQr");
+    button.disabled = true;
+    button.textContent = "Starting fresh QR session…";
+    $("qrBox").innerHTML = '<div class="qr-mark">MX</div>';
+    $("qrStatus").textContent = "Creating a fresh WhatsApp QR session…";
     try {
-      const data = await request("/pair/qr");
-      if (data.qr_data_url) {
-        const img = document.createElement("img");
-        img.alt = "Temporary WhatsApp pairing QR code";
-        img.src = data.qr_data_url;
-        $("qrBox").replaceChildren(img);
-        $("qrStatus").textContent = "QR code ready. Scan it promptly from WhatsApp Linked Devices.";
-      } else {
-        $("qrStatus").textContent = data.message || "No active QR pairing session. Generate a pairing request first.";
+      const started = await request("/pair/qr", {method:"POST", body:"{}"});
+      currentSession = String(started.session_id || "").trim();
+      currentCode = "";
+      $("pairCode").textContent = "QR PAIRING";
+      $("sessionId").textContent = currentSession;
+      $("pairResult").classList.add("show");
+      $("pairFeedback").textContent = "QR session created. Keep the Session ID private; it is required when deploying your bot.";
+      let ready = false;
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        const data = await request("/pair/qr");
+        if (data.qr_data_url) {
+          const img = document.createElement("img");
+          img.alt = "Temporary WhatsApp pairing QR code";
+          img.src = data.qr_data_url;
+          $("qrBox").replaceChildren(img);
+          $("qrStatus").textContent = "QR code ready. On WhatsApp, open Linked Devices → Link a Device and scan it.";
+          ready = true;
+          break;
+        }
+        if (data.connected) {
+          $("qrBox").innerHTML = '<div class="qr-mark">✓</div>';
+          $("qrStatus").textContent = "WhatsApp connected successfully. Your Session ID is shown on the left.";
+          ready = true;
+          break;
+        }
+        $("qrStatus").textContent = data.message || "Waiting for WhatsApp to provide the QR code…";
       }
-    } catch (error) { $("qrStatus").textContent = error.message; }
+      if (!ready) $("qrStatus").textContent = "QR generation is taking longer than expected. Try starting a fresh QR session.";
+    } catch (error) {
+      $("qrStatus").textContent = error.message || "Could not start QR pairing.";
+      $("pairFeedback").textContent = error.message || "Could not start QR pairing.";
+      toast(error.message || "Could not start QR pairing.");
+    } finally {
+      button.disabled = false;
+      button.textContent = "Start / Refresh QR pairing";
+    }
   });
 })();
 </script>
