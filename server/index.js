@@ -38,6 +38,7 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
    catch(err){logger.warn({err,requestId,botId},"Could not render WhatsApp QR code");}
   }
   if(update.connection==="open"){
+   const activePair=pendingPairings.get(botId);if(activePair)activePair.restartAttempts=0;
    const jid=sock.user?.id||null;
    const {error}=await admin.from("bot_instances").update({connection_status:"connected",bot_status:"stopped",whatsapp_jid:jid,connected_at:new Date().toISOString(),auth_state_ciphertext:remote.exportEncrypted(),metadata:{pairing_completed_at:new Date().toISOString()}}).eq("id",botId);
    if(error)logger.error({err:error,requestId,botId},"Failed to persist paired WhatsApp session");
@@ -49,7 +50,9 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
    const code=new Boom(error||new Error("WhatsApp socket closed")).output?.statusCode;
    if(p?.closing)return;
    if(code===DisconnectReason.restartRequired){
-    logger.info({requestId,botId,disconnectCode:code},"WhatsApp requested a socket restart after pairing; reconnecting with saved credentials");
+    if(p)p.restartAttempts=(p.restartAttempts||0)+1;
+    if((p?.restartAttempts||0)>3){p.closed=true;logger.error({requestId,botId,disconnectCode:code},"WhatsApp pairing socket exceeded restart limit");return;}
+    logger.info({requestId,botId,disconnectCode:code,restartAttempt:p?.restartAttempts||1},"WhatsApp requested a socket restart after pairing; reconnecting with saved credentials");
     setTimeout(()=>{
      const current=pendingPairings.get(botId);
      if(!current||current.closing)return;
@@ -119,7 +122,7 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
    stage="initialize_remote_auth";
    const remote=await createRemoteAuthState(row.id);
    stage="initialize_whatsapp_socket";
-   pendingPairings.set(row.id,{sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false});
+   pendingPairings.set(row.id,{sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false,restartAttempts:0});
    sock=attachPairingSocket({botId:row.id,remote,requestId,phoneLast4});
    stage="persist_initial_auth";
    await remote.saveCreds();
