@@ -1,0 +1,31 @@
+{
+  "name": "micky-xmd-pro",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MICKY-XMD PRO multi-tenant WhatsApp bot hosting SaaS",
+  "engines": {"node": ">=22.0.0"},
+  "scripts": {
+    "start": "npm run start:web",
+    "start:web": "node server/index.js",
+    "start:bot": "node bot-engine/worker.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@hapi/boom": "9.1.3",
+    "@supabase/supabase-js": "2.119.2",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "cookie-parser": "1.4.7",
+    "dotenv": "16.4.7",
+    "express": "5.1.0",
+    "express-rate-limit": "7.5.0",
+    "helmet": "8.1.0",
+    "libphonenumber-js": "1.11.20",
+    "pino": "9.6.0",
+    "qrcode": "1.5.4",
+    "sharp": "0.33.5",
+    "zod": "3.24.2"
+  },
+  "devDependencies": {}
+}
