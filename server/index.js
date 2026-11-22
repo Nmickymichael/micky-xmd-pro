@@ -1,0 +1,145 @@
+import "dotenv/config";
+import express from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import cookieParser from "cookie-parser";
+import { z } from "zod";
+import { admin,createAuthClient } from "./supabase.js";
+import { authenticate,setAuthCookie,clearAuthCookies } from "./auth.js";
+import { sha256,randomSessionToken } from "./crypto.js";
+import { stkPush,verifyCallbackSecret } from "./daraja.js";
+import makeWASocket, { DisconnectReason } from "@whiskeysockets/baileys";
+import pino from "pino";
+import QRCode from "qrcode";
+import { Boom } from "@hapi/boom";
+import { createRemoteAuthState } from "./remote-auth.js";
+
+const app=express();app.set("trust proxy",1);
+app.use(helmet({contentSecurityPolicy:false,crossOriginEmbedderPolicy:false}));
+app.use(express.json({limit:"1mb"}));app.use(cookieParser());
+app.use(express.static(new URL("../public",import.meta.url).pathname));
+app.use("/api",rateLimit({windowMs:60_000,limit:100,standardHeaders:"draft-7",legacyHeaders:false}));
+const logger=pino({level:process.env.LOG_LEVEL||"info"});
+const pendingPairings=new Map();
+const phoneSchema=z.string().regex(/^(254|0)?[17]\d{8}$/);
+const normalPhone=s=>{let v=s.replace(/\D/g,"");if(v.startsWith("0"))v="254"+v.slice(1);if(v.startsWith("7")||v.startsWith("1"))v="254"+v;return v;};
+async function ensureProfile(user){
+ const {data:p,error:profileReadError}=await admin.from("profiles").select("id").eq("id",user.id).maybeSingle();
+ if(profileReadError)throw profileReadError;
+ if(!p){const {error}=await admin.from("profiles").upsert({id:user.id,email:user.email,display_name:user.user_metadata?.full_name||user.email?.split("@")[0]||"MICKY-XMD User"});if(error)throw error;}
+ const {error:walletError}=await admin.from("wallets").upsert({user_id:user.id},{onConflict:"user_id",ignoreDuplicates:true});
+ if(walletError)throw walletError;
+}
+app.get("/health",(_req,res)=>res.json({ok:true,service:"micky-xmd-web",time:new Date().toISOString()}));
+setInterval(async()=>{const cutoff=Date.now()-10*60*1000;for(const [botId,pair] of pendingPairings){if(pair.tokenShownAt<cutoff){pair.closing=true;try{pair.sock.end(undefined);}catch{}pendingPairings.delete(botId);await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",botId);}}},60_000).unref();
+app.post("/api/auth/signup",async(req,res,next)=>{try{
+ const {email,password}=z.object({email:z.string().email(),password:z.string().min(8)}).parse(req.body);
+ const {data,error}=await createAuthClient().auth.signUp({email,password});if(error)throw error;
+ if(data.session){await ensureProfile(data.user);setAuthCookie(res,data.session);}
+ res.json({ok:true,confirmation_required:!data.session});
+}catch(e){next(e);}});
+app.post("/api/auth/login",async(req,res,next)=>{try{
+ const {email,password}=z.object({email:z.string().email(),password:z.string().min(8)}).parse(req.body);
+ const {data,error}=await createAuthClient().auth.signInWithPassword({email,password});if(error)throw error;
+ await ensureProfile(data.user);setAuthCookie(res,data.session);res.json({ok:true});
+}catch(e){next(e);}});
+app.post("/api/auth/logout",authenticate,async(req,res,next)=>{try{
+ await admin.auth.admin.signOut(req.accessToken);clearAuthCookies(res);res.json({ok:true});
+}catch(e){clearAuthCookies(res);res.json({ok:true});}});
+app.patch("/api/profile",authenticate,async(req,res,next)=>{try{
+ const {default_prefix}=z.object({default_prefix:z.string().min(1).max(3).regex(/^[^\s]+$/)}).parse(req.body);
+ const {error}=await admin.from("profiles").update({default_prefix}).eq("id",req.user.id);if(error)throw error;
+ res.json({ok:true,default_prefix});
+}catch(e){next(e);}});
+app.get("/api/dashboard",authenticate,async(req,res,next)=>{try{
+ await ensureProfile(req.user);
+ const [{data:wallet,error:we},{data:bots,error:be}] = await Promise.all([
+  admin.from("wallets").select("balance,currency,status").eq("user_id",req.user.id).maybeSingle(),
+  admin.from("bot_instances").select("id,bot_name,connection_status,bot_status,subscription_status,expires_at,whatsapp_number,created_at").eq("user_id",req.user.id).order("created_at",{ascending:false})
+ ]);
+ if(we)throw we;if(be)throw be;res.json({wallet:wallet||{balance:0,currency:"KES"},bots:bots||[]});
+}catch(e){next(e);}});
+app.post("/api/pair",authenticate,async(req,res,next)=>{try{
+ const {phone_number}=z.object({phone_number:phoneSchema}).parse(req.body);const phone=normalPhone(phone_number);
+ for(const [existingId,existing] of pendingPairings){if(existing.userId===req.user.id){existing.closing=true;try{existing.sock.end(undefined);}catch{}pendingPairings.delete(existingId);await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",existingId);}}
+ const sessionToken=randomSessionToken(),tokenHash=sha256(sessionToken);
+ const {data:row,error}=await admin.from("bot_instances").insert({user_id:req.user.id,bot_name:"My MICKY-XMD Bot",session_id_hash:tokenHash,session_last4:sessionToken.slice(-4),whatsapp_number:phone,connection_status:"pairing",bot_status:"stopped",is_active:false,metadata:{pairing_requested_at:new Date().toISOString()}}).select("id").single();
+ if(error)throw error;
+ try{
+  const remote=await createRemoteAuthState(row.id);
+  const sock=makeWASocket({auth:remote.state,logger:pino({level:"silent"}),printQRInTerminal:false,browser:["MICKY-XMD PRO","Chrome","1.0.0"],markOnlineOnConnect:false});
+  await remote.saveCreds();
+  pendingPairings.set(row.id,{sock,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false});
+  sock.ev.on("creds.update",remote.saveCreds);
+  sock.ev.on("connection.update",async update=>{
+   if(update.qr){try{const p=pendingPairings.get(row.id);if(p)p.qr=await QRCode.toDataURL(update.qr,{width:280,margin:1});}catch{}}
+   if(update.connection==="open"){
+    const jid=sock.user?.id||null;
+    const {error:saveError}=await admin.from("bot_instances").update({connection_status:"connected",bot_status:"stopped",whatsapp_jid:jid,connected_at:new Date().toISOString(),auth_state_ciphertext:remote.exportEncrypted(),metadata:{pairing_completed_at:new Date().toISOString()}}).eq("id",row.id);
+    if(saveError)logger.error({err:saveError,botId:row.id},"failed to persist paired session");
+   }
+   if(update.connection==="close"){
+    if(pendingPairings.get(row.id)?.closing)return;
+    const code=new Boom(update.lastDisconnect?.error).output?.statusCode;
+    if(code===DisconnectReason.loggedOut)await admin.from("bot_instances").update({connection_status:"logged_out",bot_status:"stopped",is_active:false,auth_state_ciphertext:null}).eq("id",row.id);
+   }
+   if(update.connection==="open")logger.info({botId:row.id},"Pairing socket connected; waiting for deploy action");
+  });
+  const pairingCode=await sock.requestPairingCode(phone);
+  res.json({pairing_code:pairingCode,session_id:sessionToken,bot_id:row.id,message:"Enter the pairing code in WhatsApp. Copy the session ID now; it is shown only once."});
+ }catch(err){await admin.from("bot_instances").update({connection_status:"error",bot_status:"error",is_active:false}).eq("id",row.id);throw err;}
+}catch(e){next(e);}});
+app.get("/api/pair/qr",authenticate,async(req,res,next)=>{try{
+ const {data:bot,error}=await admin.from("bot_instances").select("id").eq("user_id",req.user.id).eq("connection_status","pairing").order("created_at",{ascending:false}).limit(1).maybeSingle();
+ if(error)throw error;if(!bot)return res.status(404).json({error:"No active pairing request"});
+ const pending=pendingPairings.get(bot.id);if(!pending?.qr)return res.status(202).json({message:"QR is not ready. Use the WhatsApp pairing code instead."});
+ res.json({qr_data_url:pending.qr});
+}catch(e){next(e);}});
+app.post("/api/bots/deploy",authenticate,async(req,res,next)=>{try{
+ const input=z.object({session_id:z.string().regex(/^MICKY~[A-Za-z0-9_-]{20,}$/),bot_name:z.string().min(2).max(48).optional(),command_prefix:z.string().min(1).max(3).optional(),bot_mode:z.enum(["public","self"]).optional(),auto_view_status:z.boolean().optional(),auto_react_status:z.boolean().optional(),anti_delete_enabled:z.boolean().optional(),anti_link_enabled:z.boolean().optional(),auto_read:z.boolean().optional()}).parse(req.body);
+ const {data:bot,error:be}=await admin.from("bot_instances").select("id,connection_status,auth_state_ciphertext").eq("session_id_hash",sha256(input.session_id)).eq("user_id",req.user.id).single();
+ if(be)throw be;if(bot.connection_status!=="connected"||!bot.auth_state_ciphertext)return res.status(409).json({error:"Pair this WhatsApp account before deployment."});
+ const {data:deployment,error:deployError}=await admin.rpc("deploy_bot",{
+  p_user_id:req.user.id,p_bot_id:bot.id,p_bot_name:input.bot_name||"My MICKY-XMD Bot",
+  p_prefix:input.command_prefix||".",p_mode:input.bot_mode||"public",
+  p_auto_view:!!input.auto_view_status,p_auto_react:!!input.auto_react_status,
+  p_anti_delete:!!input.anti_delete_enabled,p_anti_link:!!input.anti_link_enabled,p_auto_read:!!input.auto_read
+ });
+ if(deployError)throw deployError;
+ const expires=deployment?.[0]?.expires_at;
+ const pending=pendingPairings.get(bot.id);if(pending){pending.closing=true;try{pending.sock.end(undefined);}catch{}pendingPairings.delete(bot.id);}
+ res.json({ok:true,message:"Bot deployment started.",balance:deployment?.[0]?.new_balance??null,expires_at:expires});
+}catch(e){next(e);}});
+app.get("/api/bots/recovery",authenticate,async(req,res,next)=>{try{
+ const {data,error}=await admin.from("bot_instances").select("id,bot_name,connection_status,bot_status,subscription_status,expires_at,session_last4").eq("user_id",req.user.id).in("connection_status",["disconnected","logged_out","error"]);
+ if(error)throw error;res.json({bots:data||[]});
+}catch(e){next(e);}});
+app.post("/api/payments/stk",authenticate,async(req,res,next)=>{try{
+ const {phone_number,amount}=z.object({phone_number:phoneSchema,amount:z.number().int().min(1).max(150000)}).parse(req.body);
+ const phone=normalPhone(phone_number);
+ const {data:payment,error}=await admin.from("payment_requests").insert({user_id:req.user.id,amount,phone_number:phone,status:"pending"}).select("id").single();if(error)throw error;
+ const response=await stkPush({phone,amount,accountReference:payment.id.replaceAll("-","").slice(0,12),description:"MICKY-XMD wallet"});
+ const {error:up}=await admin.from("payment_requests").update({merchant_request_id:response.MerchantRequestID,checkout_request_id:response.CheckoutRequestID}).eq("id",payment.id);if(up)throw up;
+ res.json({ok:true,message:"STK Push sent. Complete the prompt on your phone.",checkout_request_id:response.CheckoutRequestID});
+}catch(e){next(e);}});
+app.post("/api/payments/mpesa-callback",async(req,res,next)=>{try{
+ if(!verifyCallbackSecret(req))return res.status(401).json({ResultCode:1,ResultDesc:"Unauthorized"});
+ const body=req.body?.Body?.stkCallback;if(!body?.CheckoutRequestID)return res.status(400).json({ResultCode:1,ResultDesc:"Invalid callback"});
+ const {data:payment,error}=await admin.from("payment_requests").select("*").eq("checkout_request_id",body.CheckoutRequestID).maybeSingle();
+ if(error)throw error;if(!payment)return res.json({ResultCode:0,ResultDesc:"Acknowledged"});
+ if(payment.status==="completed"||payment.status==="failed")return res.json({ResultCode:0,ResultDesc:"Already processed"});
+ const success=Number(body.ResultCode)===0;
+ if(success){
+  const items=body.CallbackMetadata?.Item||[];
+  const paidAmount=Number(items.find(x=>x.Name==="Amount")?.Value);
+  const paidPhone=String(items.find(x=>x.Name==="PhoneNumber")?.Value||"");
+  if(paidAmount!==Number(payment.amount)||paidPhone!==String(payment.phone_number))throw new Error("M-Pesa callback amount or phone does not match the pending request");
+  const receipt=items.find(x=>x.Name==="MpesaReceiptNumber")?.Value||body.CheckoutRequestID;
+  const {error:creditErr}=await admin.rpc("wallet_credit",{p_user_id:payment.user_id,p_amount:payment.amount,p_type:"topup",p_provider:"mpesa",p_reference:String(receipt),p_metadata:{checkout_request_id:body.CheckoutRequestID}});
+  if(creditErr)throw creditErr;
+ }
+ await admin.from("payment_requests").update({status:success?"completed":"failed",result_code:String(body.ResultCode),result_description:body.ResultDesc,provider_reference:body.CheckoutRequestID,callback_payload:body}).eq("id",payment.id).eq("status","pending");
+ res.json({ResultCode:0,ResultDesc:"Accepted"});
+}catch(e){logger.error(e);res.status(500).json({ResultCode:1,ResultDesc:"Callback processing failed"});}});
+app.use((err,req,res,_next)=>{logger.error({err,message:err.message},"API request failed");const status=err.name==="ZodError"?400:500;res.status(status).json({error:status===400?err.issues?.[0]?.message||"Invalid request":(process.env.NODE_ENV==="production"?"Request failed":err.message)});});
+const port=Number(process.env.PORT||3000);app.listen(port,()=>logger.info({port},"MICKY-XMD web/API process listening"));
