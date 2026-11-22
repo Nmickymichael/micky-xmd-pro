@@ -27,6 +27,47 @@ const normalPhone=s=>{let v=s.replace(/\D/g,"");if(v.startsWith("0"))v="254"+v.s
 // Pairing-code requests must use Baileys' own WebSocket-open wait. A separate
 // connection.update listener can miss the initial "connecting" event because
 // makeWASocket starts connecting before it returns the socket.
+function attachPairingSocket({botId,remote,requestId,phoneLast4}){
+ const sock=makeWASocket({auth:remote.state,logger:pino({level:"silent"}),printQRInTerminal:false,browser:["MICKY-XMD PRO","Chrome","1.0.0"],markOnlineOnConnect:false,connectTimeoutMs:60_000,keepAliveIntervalMs:30_000});
+ const pending=pendingPairings.get(botId);
+ if(pending)pending.sock=sock;
+ sock.ev.on("creds.update",()=>remote.saveCreds().catch(err=>logger.error({err,requestId,botId},"Could not persist updated WhatsApp credentials")));
+ sock.ev.on("connection.update",async update=>{
+  if(update.qr){
+   try{const p=pendingPairings.get(botId);if(p)p.qr=await QRCode.toDataURL(update.qr,{width:280,margin:1});}
+   catch(err){logger.warn({err,requestId,botId},"Could not render WhatsApp QR code");}
+  }
+  if(update.connection==="open"){
+   const jid=sock.user?.id||null;
+   const {error}=await admin.from("bot_instances").update({connection_status:"connected",bot_status:"stopped",whatsapp_jid:jid,connected_at:new Date().toISOString(),auth_state_ciphertext:remote.exportEncrypted(),metadata:{pairing_completed_at:new Date().toISOString()}}).eq("id",botId);
+   if(error)logger.error({err:error,requestId,botId},"Failed to persist paired WhatsApp session");
+   else logger.info({requestId,botId,phoneLast4},"WhatsApp account paired successfully");
+  }
+  if(update.connection==="close"){
+   const p=pendingPairings.get(botId);
+   const error=update.lastDisconnect?.error;
+   const code=new Boom(error||new Error("WhatsApp socket closed")).output?.statusCode;
+   if(p?.closing)return;
+   if(code===DisconnectReason.restartRequired){
+    logger.info({requestId,botId,disconnectCode:code},"WhatsApp requested a socket restart after pairing; reconnecting with saved credentials");
+    setTimeout(()=>{
+     const current=pendingPairings.get(botId);
+     if(!current||current.closing)return;
+     try{attachPairingSocket({botId,remote,requestId,phoneLast4});}
+     catch(restartError){current.closed=true;logger.error({err:restartError,requestId,botId},"Could not restart WhatsApp pairing socket");}
+    },500);
+    return;
+   }
+   if(p)p.closed=true;
+   logger.warn({requestId,botId,disconnectCode:code,disconnectMessage:error?.message},"WhatsApp pairing socket closed");
+   if(code===DisconnectReason.loggedOut){
+    const {error:saveError}=await admin.from("bot_instances").update({connection_status:"logged_out",bot_status:"stopped",is_active:false,auth_state_ciphertext:null}).eq("id",botId);
+    if(saveError)logger.error({err:saveError,requestId,botId},"Could not persist logged-out state");
+   }
+  }
+ });
+ return sock;
+}
 async function ensureProfile(user){
  const {data:p,error:profileReadError}=await admin.from("profiles").select("id").eq("id",user.id).maybeSingle();
  if(profileReadError)throw profileReadError;
@@ -78,24 +119,8 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
    stage="initialize_remote_auth";
    const remote=await createRemoteAuthState(row.id);
    stage="initialize_whatsapp_socket";
-   sock=makeWASocket({auth:remote.state,logger:pino({level:"silent"}),printQRInTerminal:false,browser:["MICKY-XMD PRO","Chrome","1.0.0"],markOnlineOnConnect:false,connectTimeoutMs:60_000,keepAliveIntervalMs:30_000});
-   pendingPairings.set(row.id,{sock,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false});
-   sock.ev.on("creds.update",remote.saveCreds);
-   sock.ev.on("connection.update",async update=>{
-    if(update.qr){try{const p=pendingPairings.get(row.id);if(p)p.qr=await QRCode.toDataURL(update.qr,{width:280,margin:1});}catch(qrError){logger.warn({err:qrError,requestId,botId:row.id},"Could not render WhatsApp QR code");}}
-    if(update.connection==="open"){
-     const jid=sock.user?.id||null;
-     const {error:saveError}=await admin.from("bot_instances").update({connection_status:"connected",bot_status:"stopped",whatsapp_jid:jid,connected_at:new Date().toISOString(),auth_state_ciphertext:remote.exportEncrypted(),metadata:{pairing_completed_at:new Date().toISOString()}}).eq("id",row.id);
-     if(saveError)logger.error({err:saveError,requestId,botId:row.id},"failed to persist paired session");
-    }
-    if(update.connection==="close"){
-     const pending=pendingPairings.get(row.id);if(pending)pending.closed=true;if(pending?.closing)return;
-     const code=new Boom(update.lastDisconnect?.error).output?.statusCode;
-     logger.warn({requestId,botId:row.id,disconnectCode:code,disconnectMessage:update.lastDisconnect?.error?.message},"WhatsApp pairing socket closed");
-     if(code===DisconnectReason.loggedOut)await admin.from("bot_instances").update({connection_status:"logged_out",bot_status:"stopped",is_active:false,auth_state_ciphertext:null}).eq("id",row.id);
-    }
-    if(update.connection==="open")logger.info({requestId,botId:row.id},"Pairing socket connected; waiting for deploy action");
-   });
+   pendingPairings.set(row.id,{sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false});
+   sock=attachPairingSocket({botId:row.id,remote,requestId,phoneLast4});
    stage="persist_initial_auth";
    await remote.saveCreds();
    stage="request_whatsapp_pairing_code";
