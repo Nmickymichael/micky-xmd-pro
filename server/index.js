@@ -87,7 +87,7 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{try{
  try{
   const remote=await createRemoteAuthState(row.id);
   sock=makeWASocket({auth:remote.state,logger:pino({level:"silent"}),printQRInTerminal:false,browser:["MICKY-XMD PRO","Chrome","1.0.0"],markOnlineOnConnect:false,connectTimeoutMs:60_000,keepAliveIntervalMs:30_000});
-  const socketReady=waitForSocketReady(sock);
+  const socketReady=waitForSocketReady(sock).then(()=>({ok:true}),error=>({error}));
   pendingPairings.set(row.id,{sock,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false});
   sock.ev.on("creds.update",remote.saveCreds);
   sock.ev.on("connection.update",async update=>{
@@ -107,7 +107,8 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{try{
    if(update.connection==="open")logger.info({botId:row.id},"Pairing socket connected; waiting for deploy action");
   });
   await remote.saveCreds();
-  await socketReady;
+  const ready=await socketReady;
+  if(ready.error)throw ready.error;
   await new Promise(resolve=>setTimeout(resolve,5_000));
   if(pendingPairings.get(row.id)?.closed)throw new Error("WhatsApp closed the connection before the pairing request was ready. Please retry.");
   const pairingCode=await sock.requestPairingCode(phone);
