@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MICKY-XMD PRO · Sign in</title>
+<style>
+:root{color-scheme:dark;--bg:#080d17;--panel:#111a2a;--line:#26344a;--muted:#93a4bb;--cyan:#48d7ee;--green:#39d99a}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 15% 5%,#12304b 0,transparent 42%),var(--bg);font:15px Inter,system-ui,sans-serif;color:#eef5ff}
+.card{width:min(100%,430px);padding:32px;border:1px solid var(--line);border-radius:22px;background:#101827ed;box-shadow:0 24px 90px #0008}
+.brand{font-weight:900;letter-spacing:.12em;color:var(--cyan);font-size:13px}.brand b{color:white;font-size:21px;display:block;margin-top:8px;letter-spacing:.02em}
+h1{font-size:25px;margin:27px 0 8px}.muted{color:var(--muted);line-height:1.55;margin:0 0 22px}
+label{display:block;font-size:12px;color:#bdc9d9;margin:15px 0 7px}input{width:100%;padding:14px;border-radius:11px;border:1px solid var(--line);background:#0b1321;color:white;outline:none}input:focus{border-color:var(--cyan)}
+button{width:100%;padding:14px;margin-top:17px;border:0;border-radius:11px;background:linear-gradient(100deg,#36cce8,#39d99a);font-weight:850;color:#06111c;cursor:pointer}
+.switch{display:flex;gap:8px;margin-top:16px}.switch button{margin:0;background:#1b2940;color:#dbe8f7}.switch button.active{outline:1px solid var(--cyan)}.msg{min-height:22px;margin-top:15px;color:var(--muted);font-size:13px}
+</style></head><body><main class="card"><div class="brand">MICKY-XMD<b>PRO CONTROL PANEL</b></div><h1 id="heading">Welcome back</h1><p class="muted">Sign in to manage your WhatsApp bot instances, pairing sessions and wallet.</p>
+<div class="switch"><button id="loginTab" class="active" type="button">Sign in</button><button id="signupTab" type="button">Create account</button></div>
+<form id="authForm"><label for="email">EMAIL ADDRESS</label><input id="email" type="email" autocomplete="email" required><label for="password">PASSWORD</label><input id="password" type="password" minlength="8" autocomplete="current-password" required><button id="submit" type="submit">Sign in securely</button></form><div class="msg" id="message" role="status"></div></main>
+<script>
+let mode="login";const $=id=>document.getElementById(id);
+function setMode(next){mode=next;$("heading").textContent=mode==="login"?"Welcome back":"Create your account";$("submit").textContent=mode==="login"?"Sign in securely":"Create account";$("loginTab").classList.toggle("active",mode==="login");$("signupTab").classList.toggle("active",mode==="signup");}
+$("loginTab").onclick=()=>setMode("login");$("signupTab").onclick=()=>setMode("signup");
+$("authForm").onsubmit=async e=>{e.preventDefault();$("message").textContent="Please wait…";$("submit").disabled=true;
+try{const r=await fetch("/api/auth/"+mode,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({email:$("email").value.trim(),password:$("password").value})});const d=await r.json();if(!r.ok)throw Error(d.error||"Authentication failed");if(mode==="signup"&&d.confirmation_required){$("message").textContent="Account created. Check your email to confirm, then sign in.";return;}location.href="/dashboard.html";}
+catch(err){$("message").textContent=err.message;}finally{$("submit").disabled=false;}};
+</script></body></html>
