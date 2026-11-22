@@ -59,6 +59,7 @@
         <div class="hint">Use international format without +, spaces or hyphens. Example: 254712345678.</div>
         <button class="btn primary full" id="generateBtn" type="submit">Generate pairing code →</button>
       </form>
+      <div id="pairFeedback" class="muted" role="status" aria-live="polite" style="margin-top:12px;min-height:18px"></div>
       <div class="result" id="pairResult" aria-live="polite">
         <div class="result-title">Your WhatsApp linking code</div>
         <div class="code" id="pairCode">—</div>
@@ -108,6 +109,7 @@
     const button = $("generateBtn");
     button.disabled = true; button.textContent = "Requesting secure pairing…";
     $("pairResult").classList.remove("show");
+    $("pairFeedback").textContent = "Connecting to WhatsApp and requesting your pairing code. This can take up to a minute…";
     $("qrStatus").textContent = "Requesting a temporary pairing session…";
     try {
       const data = await request("/pair", {method:"POST", body:JSON.stringify({phone_number:phone})});
@@ -125,9 +127,11 @@
       $("pairCode").textContent = currentCode.replace(/^(.{4})(.{4})$/, "$1 $2");
       $("sessionId").textContent = currentSession;
       $("pairResult").classList.add("show");
+      $("pairFeedback").textContent = "Pairing code generated successfully. Open WhatsApp → Linked Devices → Link with phone number.";
       $("qrStatus").textContent = "Pairing code generated. Complete linking in WhatsApp.";
       toast(data.message || "Pairing code generated. Complete the WhatsApp linking steps.");
     } catch (error) {
+      $("pairFeedback").textContent = error.message || "Pairing request failed. Please try again.";
       $("qrStatus").textContent = "Pairing request could not be completed.";
       toast(error.message);
     } finally {
