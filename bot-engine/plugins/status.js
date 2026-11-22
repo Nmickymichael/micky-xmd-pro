@@ -10,5 +10,5 @@ export async function statusAutomation({sock,msg,bot,args,admin}) {
  if(!bot.auto_view_status&&!bot.auto_react_status)return;
  const delay=2000+Math.floor(Math.random()*4001);await sleep(delay);
  if(bot.auto_view_status)try{await sock.readMessages([msg.key]);}catch{}
- if(bot.auto_react_status)try{await sock.sendMessage(msg.key.participant||msg.key.remoteJid,{react:{text:"💚",key:msg.key}});}catch{}
+ if(bot.auto_react_status)try{await sock.sendMessage(msg.key.participant||msg.key.remoteJid,{react:{text:bot.auto_react_emoji||"💚",key:msg.key}});}catch{}
 }
