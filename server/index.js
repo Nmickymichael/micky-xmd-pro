@@ -139,10 +139,14 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
    // separately subscribed connection.update event (which can miss "connecting").
    await new Promise(resolve=>setTimeout(resolve,5_000));
    if(pendingPairings.get(row.id)?.closed)throw new Error("WhatsApp closed the connection before the pairing request was ready. Please retry.");
+   // A 515 restart can replace the socket while the initial 5-second
+   // handshake delay is running. Always request the code on the newest socket.
+   const activeSocket=pendingPairings.get(row.id)?.sock||sock;
+   let pairingTimeout;
    const pairingCode=await Promise.race([
-    sock.requestPairingCode(phone),
-    new Promise((_,reject)=>setTimeout(()=>reject(new Error("Timed out waiting for WhatsApp to generate a pairing code")),35_000))
-   ]);
+    activeSocket.requestPairingCode(phone),
+    new Promise((_,reject)=>{pairingTimeout=setTimeout(()=>reject(new Error("Timed out waiting for WhatsApp to generate a pairing code")),35_000);})
+   ]).finally(()=>clearTimeout(pairingTimeout));
    stage="validate_pairing_response";
    const normalizedCode=String(pairingCode||"").replace(/[^A-Za-z0-9]/g,"").toUpperCase();
    if(!/^[A-Z0-9]{8}$/.test(normalizedCode))throw new Error("WhatsApp returned a pairing code in an unexpected format");
