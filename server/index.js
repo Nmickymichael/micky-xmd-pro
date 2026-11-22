@@ -24,24 +24,9 @@ const logger=pino({level:process.env.LOG_LEVEL||"info"});
 const pendingPairings=new Map();
 const phoneSchema=z.string().regex(/^(254|0)?[17]\d{8}$/);
 const normalPhone=s=>{let v=s.replace(/\D/g,"");if(v.startsWith("0"))v="254"+v.slice(1);if(v.startsWith("7")||v.startsWith("1"))v="254"+v;return v;};
-function waitForSocketReady(sock,timeoutMs=30_000){
- return new Promise((resolve,reject)=>{
-  let settled=false;
-  const finish=error=>{
-   if(settled)return;
-   settled=true;
-   clearTimeout(timer);
-   sock.ev.off("connection.update",onUpdate);
-   if(error)reject(error);else resolve();
-  };
-  const onUpdate=update=>{
-   if(update.connection==="connecting"||update.qr)finish();
-   else if(update.connection==="close")finish(new Boom(update.lastDisconnect?.error||new Error("WhatsApp socket closed before pairing was ready")));
-  };
-  const timer=setTimeout(()=>finish(new Error("Timed out waiting for WhatsApp connection to become ready")),timeoutMs);
-  sock.ev.on("connection.update",onUpdate);
- });
-}
+// Pairing-code requests must use Baileys' own WebSocket-open wait. A separate
+// connection.update listener can miss the initial "connecting" event because
+// makeWASocket starts connecting before it returns the socket.
 async function ensureProfile(user){
  const {data:p,error:profileReadError}=await admin.from("profiles").select("id").eq("id",user.id).maybeSingle();
  if(profileReadError)throw profileReadError;
@@ -94,7 +79,6 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
    const remote=await createRemoteAuthState(row.id);
    stage="initialize_whatsapp_socket";
    sock=makeWASocket({auth:remote.state,logger:pino({level:"silent"}),printQRInTerminal:false,browser:["MICKY-XMD PRO","Chrome","1.0.0"],markOnlineOnConnect:false,connectTimeoutMs:60_000,keepAliveIntervalMs:30_000});
-   const socketReady=waitForSocketReady(sock).then(()=>({ok:true}),error=>({error}));
    pendingPairings.set(row.id,{sock,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false});
    sock.ev.on("creds.update",remote.saveCreds);
    sock.ev.on("connection.update",async update=>{
@@ -114,12 +98,16 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
    });
    stage="persist_initial_auth";
    await remote.saveCreds();
-   stage="wait_for_whatsapp_socket";
-   const ready=await socketReady;if(ready.error)throw ready.error;
    stage="request_whatsapp_pairing_code";
+   // Give the WhatsApp handshake time to initialize. requestPairingCode()
+   // internally waits for Baileys' WebSocket to open; do not gate it on a
+   // separately subscribed connection.update event (which can miss "connecting").
    await new Promise(resolve=>setTimeout(resolve,5_000));
    if(pendingPairings.get(row.id)?.closed)throw new Error("WhatsApp closed the connection before the pairing request was ready. Please retry.");
-   const pairingCode=await sock.requestPairingCode(phone);
+   const pairingCode=await Promise.race([
+    sock.requestPairingCode(phone),
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error("Timed out waiting for WhatsApp to generate a pairing code")),35_000))
+   ]);
    stage="validate_pairing_response";
    const normalizedCode=String(pairingCode||"").replace(/[^A-Za-z0-9]/g,"").toUpperCase();
    if(!/^[A-Z0-9]{8}$/.test(normalizedCode))throw new Error("WhatsApp returned a pairing code in an unexpected format");
