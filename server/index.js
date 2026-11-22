@@ -96,14 +96,14 @@ app.get("/api/pair/qr",authenticate,async(req,res,next)=>{try{
  res.json({qr_data_url:pending.qr});
 }catch(e){next(e);}});
 app.post("/api/bots/deploy",authenticate,async(req,res,next)=>{try{
- const input=z.object({session_id:z.string().regex(/^MICKY~[A-Za-z0-9_-]{20,}$/),bot_name:z.string().min(2).max(48).optional(),command_prefix:z.string().min(1).max(3).optional(),bot_mode:z.enum(["public","self"]).optional(),auto_view_status:z.boolean().optional(),auto_react_status:z.boolean().optional(),anti_delete_enabled:z.boolean().optional(),anti_link_enabled:z.boolean().optional(),auto_read:z.boolean().optional()}).parse(req.body);
+ const input=z.object({session_id:z.string().regex(/^MICKY~[A-Za-z0-9_-]{20,}$/),bot_name:z.string().min(2).max(48).optional(),command_prefix:z.string().min(1).max(3).optional(),bot_mode:z.enum(["public","self"]).optional(),auto_view_status:z.boolean().optional(),auto_react_status:z.boolean().optional(),anti_delete_enabled:z.boolean().optional(),anti_link_enabled:z.boolean().optional(),auto_read:z.boolean().optional(),always_online:z.boolean().optional(),auto_react_emoji:z.string().min(1).max(8).optional()}).parse(req.body);
  const {data:bot,error:be}=await admin.from("bot_instances").select("id,connection_status,auth_state_ciphertext").eq("session_id_hash",sha256(input.session_id)).eq("user_id",req.user.id).single();
  if(be)throw be;if(bot.connection_status!=="connected"||!bot.auth_state_ciphertext)return res.status(409).json({error:"Pair this WhatsApp account before deployment."});
- const {data:deployment,error:deployError}=await admin.rpc("deploy_bot",{
+ const {data:deployment,error:deployError}=await admin.rpc("deploy_bot_v2",{
   p_user_id:req.user.id,p_bot_id:bot.id,p_bot_name:input.bot_name||"My MICKY-XMD Bot",
   p_prefix:input.command_prefix||".",p_mode:input.bot_mode||"public",
   p_auto_view:!!input.auto_view_status,p_auto_react:!!input.auto_react_status,
-  p_anti_delete:!!input.anti_delete_enabled,p_anti_link:!!input.anti_link_enabled,p_auto_read:!!input.auto_read
+  p_anti_delete:!!input.anti_delete_enabled,p_anti_link:!!input.anti_link_enabled,p_auto_read:!!input.auto_read,p_always_online:!!input.always_online,p_auto_react_emoji:input.auto_react_emoji||"💚"
  });
  if(deployError)throw deployError;
  const expires=deployment?.[0]?.expires_at;
