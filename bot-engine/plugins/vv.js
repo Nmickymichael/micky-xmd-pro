@@ -1,0 +1,1 @@
+export async function viewOnce({sock,msg}){await sock.sendMessage(msg.key.remoteJid,{text:"🔒 MICKY-XMD does not bypass WhatsApp view-once protections. Ask the sender to share the media normally if they want it saved."},{quoted:msg});}
