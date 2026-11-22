@@ -71,6 +71,39 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
  });
  return sock;
 }
+
+async function requestPairingCodeWithRecovery({botId,phone,requestId,phoneLast4}){
+ for(let attempt=1;attempt<=3;attempt++){
+  const pending=pendingPairings.get(botId);
+  if(!pending||pending.closing||pending.closed)throw new Error("WhatsApp pairing connection closed before a code could be generated");
+  const socket=pending.sock;
+  if(!socket)throw new Error("WhatsApp pairing socket is not ready");
+  let timeout;
+  try{
+   logger.info({requestId,botId,phoneLast4,attempt},"Requesting WhatsApp pairing code");
+   return await Promise.race([
+    socket.requestPairingCode(phone),
+    new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error("Timed out waiting for WhatsApp to generate a pairing code")),20_000);})
+   ]);
+  }catch(error){
+   if(attempt===3)throw error;
+   const replaced=await new Promise(resolve=>{
+    const started=Date.now();
+    const check=()=>{
+     const latest=pendingPairings.get(botId);
+     if(!latest||latest.closing||latest.closed)return resolve(false);
+     if(latest.sock&&latest.sock!==socket)return resolve(true);
+     if(Date.now()-started>=3_000)return resolve(false);
+     setTimeout(check,100);
+    };
+    check();
+   });
+   if(!replaced)throw error;
+   logger.warn({requestId,botId,phoneLast4,attempt},"WhatsApp replaced the pairing socket; retrying pairing-code request");
+  }finally{clearTimeout(timeout);}
+ }
+ throw new Error("WhatsApp could not generate a pairing code");
+}
 async function ensureProfile(user){
  const {data:p,error:profileReadError}=await admin.from("profiles").select("id").eq("id",user.id).maybeSingle();
  if(profileReadError)throw profileReadError;
@@ -141,12 +174,7 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
    if(pendingPairings.get(row.id)?.closed)throw new Error("WhatsApp closed the connection before the pairing request was ready. Please retry.");
    // A 515 restart can replace the socket while the initial 5-second
    // handshake delay is running. Always request the code on the newest socket.
-   const activeSocket=pendingPairings.get(row.id)?.sock||sock;
-   let pairingTimeout;
-   const pairingCode=await Promise.race([
-    activeSocket.requestPairingCode(phone),
-    new Promise((_,reject)=>{pairingTimeout=setTimeout(()=>reject(new Error("Timed out waiting for WhatsApp to generate a pairing code")),35_000);})
-   ]).finally(()=>clearTimeout(pairingTimeout));
+   const pairingCode=await requestPairingCodeWithRecovery({botId:row.id,phone,requestId,phoneLast4});
    stage="validate_pairing_response";
    const normalizedCode=String(pairingCode||"").replace(/[^A-Za-z0-9]/g,"").toUpperCase();
    if(!/^[A-Z0-9]{8}$/.test(normalizedCode))throw new Error("WhatsApp returned a pairing code in an unexpected format");
@@ -159,7 +187,15 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
    const {error:stateError}=await admin.from("bot_instances").update({connection_status:"error",bot_status:"error",is_active:false,metadata:{pairing_failed_at:new Date().toISOString(),pairing_request_id:requestId,pairing_failure_stage:failedStage}}).eq("id",row.id);
    if(stateError)logger.error({err:stateError,requestId,botId:row.id,failedStage},"Could not persist pairing failure state");
    logger.error({err,requestId,botId:row.id,phoneLast4,failedStage},"WhatsApp pairing request failed");
-   throw err;
+   const rawMessage=String(err?.message||"");
+   const safeMessage=/timed out/i.test(rawMessage)
+    ?"WhatsApp did not finish generating a pairing code in time. Try again shortly or use QR pairing."
+    :/429|rate.?limit|over.?limit/i.test(rawMessage)
+     ?"WhatsApp temporarily limited pairing requests. Wait a minute before trying again."
+     :/connection|socket|closed|open/i.test(rawMessage)
+      ?"WhatsApp closed the pairing connection before the code was ready. Please retry once."
+      :"WhatsApp could not generate a pairing code right now. QR pairing remains available.";
+   return res.status(502).json({error:"WhatsApp pairing code unavailable",message:safeMessage,stage:failedStage});
   }
  }catch(err){logger.error({err,requestId,botId,phoneLast4,stage},"Pairing API request failed");next(err);}
 });
