@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { randomUUID } from "node:crypto";
 import express from "express";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -77,50 +78,64 @@ app.get("/api/dashboard",authenticate,async(req,res,next)=>{try{
  ]);
  if(we)throw we;if(be)throw be;res.json({wallet:wallet||{balance:0,currency:"KES"},bots:bots||[]});
 }catch(e){next(e);}});
-app.post("/api/pair",authenticate,async(req,res,next)=>{try{
- const {phone_number}=z.object({phone_number:phoneSchema}).parse(req.body);const phone=normalPhone(phone_number);
- for(const [existingId,existing] of pendingPairings){if(existing.userId===req.user.id){existing.closing=true;try{existing.sock.end(undefined);}catch{}pendingPairings.delete(existingId);await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",existingId);}}
- const sessionToken=randomSessionToken(),tokenHash=sha256(sessionToken);
- const {data:row,error}=await admin.from("bot_instances").insert({user_id:req.user.id,bot_name:"My MICKY-XMD Bot",session_id_hash:tokenHash,session_last4:sessionToken.slice(-4),whatsapp_number:phone,connection_status:"pairing",bot_status:"stopped",is_active:false,metadata:{pairing_requested_at:new Date().toISOString()}}).select("id").single();
- if(error)throw error;
- let sock;
+app.post("/api/pair",authenticate,async(req,res,next)=>{
+ const requestId=randomUUID();let stage="validate_request";let botId=null;let phoneLast4=null;
  try{
-  const remote=await createRemoteAuthState(row.id);
-  sock=makeWASocket({auth:remote.state,logger:pino({level:"silent"}),printQRInTerminal:false,browser:["MICKY-XMD PRO","Chrome","1.0.0"],markOnlineOnConnect:false,connectTimeoutMs:60_000,keepAliveIntervalMs:30_000});
-  const socketReady=waitForSocketReady(sock).then(()=>({ok:true}),error=>({error}));
-  pendingPairings.set(row.id,{sock,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false});
-  sock.ev.on("creds.update",remote.saveCreds);
-  sock.ev.on("connection.update",async update=>{
-   if(update.qr){try{const p=pendingPairings.get(row.id);if(p)p.qr=await QRCode.toDataURL(update.qr,{width:280,margin:1});}catch{}}
-   if(update.connection==="open"){
-    const jid=sock.user?.id||null;
-    const {error:saveError}=await admin.from("bot_instances").update({connection_status:"connected",bot_status:"stopped",whatsapp_jid:jid,connected_at:new Date().toISOString(),auth_state_ciphertext:remote.exportEncrypted(),metadata:{pairing_completed_at:new Date().toISOString()}}).eq("id",row.id);
-    if(saveError)logger.error({err:saveError,botId:row.id},"failed to persist paired session");
-   }
-   if(update.connection==="close"){
-    const pending=pendingPairings.get(row.id);
-    if(pending)pending.closed=true;
-    if(pending?.closing)return;
-    const code=new Boom(update.lastDisconnect?.error).output?.statusCode;
-    if(code===DisconnectReason.loggedOut)await admin.from("bot_instances").update({connection_status:"logged_out",bot_status:"stopped",is_active:false,auth_state_ciphertext:null}).eq("id",row.id);
-   }
-   if(update.connection==="open")logger.info({botId:row.id},"Pairing socket connected; waiting for deploy action");
-  });
-  await remote.saveCreds();
-  const ready=await socketReady;
-  if(ready.error)throw ready.error;
-  await new Promise(resolve=>setTimeout(resolve,5_000));
-  if(pendingPairings.get(row.id)?.closed)throw new Error("WhatsApp closed the connection before the pairing request was ready. Please retry.");
-  const pairingCode=await sock.requestPairingCode(phone);
-  res.json({pairing_code:pairingCode,session_id:sessionToken,bot_id:row.id,message:"Enter the pairing code in WhatsApp. Copy the session ID now; it is shown only once."});
- }catch(err){
-  const pending=pendingPairings.get(row.id);
-  if(pending){pending.closing=true;pendingPairings.delete(row.id);}
-  try{sock?.end(undefined);}catch{}
-  await admin.from("bot_instances").update({connection_status:"error",bot_status:"error",is_active:false}).eq("id",row.id);
-  throw err;
- }
-}catch(e){next(e);}});
+  const {phone_number}=z.object({phone_number:phoneSchema}).parse(req.body);const phone=normalPhone(phone_number);phoneLast4=phone.slice(-4);
+  stage="close_previous_pending_pairings";
+  for(const [existingId,existing] of pendingPairings){if(existing.userId===req.user.id){existing.closing=true;try{existing.sock.end(undefined);}catch{}pendingPairings.delete(existingId);const {error:closeError}=await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",existingId);if(closeError)logger.warn({err:closeError,requestId,botId:existingId},"Could not mark previous pairing as disconnected");}}
+  stage="create_bot_record";
+  const sessionToken=randomSessionToken(),tokenHash=sha256(sessionToken);
+  const {data:row,error}=await admin.from("bot_instances").insert({user_id:req.user.id,bot_name:"My MICKY-XMD Bot",session_id_hash:tokenHash,session_last4:sessionToken.slice(-4),whatsapp_number:phone,connection_status:"pairing",bot_status:"stopped",is_active:false,metadata:{pairing_requested_at:new Date().toISOString(),pairing_request_id:requestId}}).select("id").single();
+  if(error)throw error;botId=row.id;
+  let sock;
+  try{
+   stage="initialize_remote_auth";
+   const remote=await createRemoteAuthState(row.id);
+   stage="initialize_whatsapp_socket";
+   sock=makeWASocket({auth:remote.state,logger:pino({level:"silent"}),printQRInTerminal:false,browser:["MICKY-XMD PRO","Chrome","1.0.0"],markOnlineOnConnect:false,connectTimeoutMs:60_000,keepAliveIntervalMs:30_000});
+   const socketReady=waitForSocketReady(sock).then(()=>({ok:true}),error=>({error}));
+   pendingPairings.set(row.id,{sock,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false});
+   sock.ev.on("creds.update",remote.saveCreds);
+   sock.ev.on("connection.update",async update=>{
+    if(update.qr){try{const p=pendingPairings.get(row.id);if(p)p.qr=await QRCode.toDataURL(update.qr,{width:280,margin:1});}catch(qrError){logger.warn({err:qrError,requestId,botId:row.id},"Could not render WhatsApp QR code");}}
+    if(update.connection==="open"){
+     const jid=sock.user?.id||null;
+     const {error:saveError}=await admin.from("bot_instances").update({connection_status:"connected",bot_status:"stopped",whatsapp_jid:jid,connected_at:new Date().toISOString(),auth_state_ciphertext:remote.exportEncrypted(),metadata:{pairing_completed_at:new Date().toISOString()}}).eq("id",row.id);
+     if(saveError)logger.error({err:saveError,requestId,botId:row.id},"failed to persist paired session");
+    }
+    if(update.connection==="close"){
+     const pending=pendingPairings.get(row.id);if(pending)pending.closed=true;if(pending?.closing)return;
+     const code=new Boom(update.lastDisconnect?.error).output?.statusCode;
+     logger.warn({requestId,botId:row.id,disconnectCode:code,disconnectMessage:update.lastDisconnect?.error?.message},"WhatsApp pairing socket closed");
+     if(code===DisconnectReason.loggedOut)await admin.from("bot_instances").update({connection_status:"logged_out",bot_status:"stopped",is_active:false,auth_state_ciphertext:null}).eq("id",row.id);
+    }
+    if(update.connection==="open")logger.info({requestId,botId:row.id},"Pairing socket connected; waiting for deploy action");
+   });
+   stage="persist_initial_auth";
+   await remote.saveCreds();
+   stage="wait_for_whatsapp_socket";
+   const ready=await socketReady;if(ready.error)throw ready.error;
+   stage="request_whatsapp_pairing_code";
+   await new Promise(resolve=>setTimeout(resolve,5_000));
+   if(pendingPairings.get(row.id)?.closed)throw new Error("WhatsApp closed the connection before the pairing request was ready. Please retry.");
+   const pairingCode=await sock.requestPairingCode(phone);
+   stage="validate_pairing_response";
+   const normalizedCode=String(pairingCode||"").replace(/[^A-Za-z0-9]/g,"").toUpperCase();
+   if(!/^[A-Z0-9]{8}$/.test(normalizedCode))throw new Error("WhatsApp returned a pairing code in an unexpected format");
+   if(!/^MICKY~[A-Za-z0-9_-]{20,}$/.test(sessionToken))throw new Error("Session token generation failed validation");
+   logger.info({requestId,botId:row.id,phoneLast4,codeLength:normalizedCode.length,sessionTokenPresent:true},"WhatsApp pairing response generated");
+   res.json({ok:true,pairing_code:normalizedCode,session_id:sessionToken,bot_id:row.id,message:"Enter the pairing code in WhatsApp. Copy the session ID now; it is shown only once."});
+  }catch(err){
+   const failedStage=stage;const pending=pendingPairings.get(row.id);if(pending){pending.closing=true;pendingPairings.delete(row.id);}
+   try{sock?.end(undefined);}catch{}
+   const {error:stateError}=await admin.from("bot_instances").update({connection_status:"error",bot_status:"error",is_active:false,metadata:{pairing_failed_at:new Date().toISOString(),pairing_request_id:requestId,pairing_failure_stage:failedStage}}).eq("id",row.id);
+   if(stateError)logger.error({err:stateError,requestId,botId:row.id,failedStage},"Could not persist pairing failure state");
+   logger.error({err,requestId,botId:row.id,phoneLast4,failedStage},"WhatsApp pairing request failed");
+   throw err;
+  }
+ }catch(err){logger.error({err,requestId,botId,phoneLast4,stage},"Pairing API request failed");next(err);}
+});
 app.get("/api/pair/qr",authenticate,async(req,res,next)=>{try{
  const {data:bot,error}=await admin.from("bot_instances").select("id").eq("user_id",req.user.id).eq("connection_status","pairing").order("created_at",{ascending:false}).limit(1).maybeSingle();
  if(error)throw error;if(!bot)return res.status(404).json({error:"No active pairing request"});
@@ -173,5 +188,5 @@ app.post("/api/payments/mpesa-callback",async(req,res,next)=>{try{
  await admin.from("payment_requests").update({status:success?"completed":"failed",result_code:String(body.ResultCode),result_description:body.ResultDesc,provider_reference:body.CheckoutRequestID,callback_payload:body}).eq("id",payment.id).eq("status","pending");
  res.json({ResultCode:0,ResultDesc:"Accepted"});
 }catch(e){logger.error(e);res.status(500).json({ResultCode:1,ResultDesc:"Callback processing failed"});}});
-app.use((err,req,res,_next)=>{logger.error({err,message:err.message},"API request failed");const status=err.name==="ZodError"?400:500;res.status(status).json({error:status===400?err.issues?.[0]?.message||"Invalid request":(process.env.NODE_ENV==="production"?"Request failed":err.message)});});
+app.use((err,req,res,_next)=>{const status=err.name==="ZodError"?400:500;logger.error({err,message:err.message,method:req.method,path:req.path,status},"API request failed");res.status(status).json({error:status===400?err.issues?.[0]?.message||"Invalid request":"Request failed"});});
 const port=Number(process.env.PORT||3000);app.listen(port,()=>logger.info({port},"MICKY-XMD web/API process listening"));
