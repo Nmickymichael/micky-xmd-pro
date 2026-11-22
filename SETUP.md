@@ -11,6 +11,7 @@ A static-only host or a serverless function platform is not suitable for the Wha
 The dedicated project is `dtibowvdocfqihrgpdvk` (`https://dtibowvdocfqihrgpdvk.supabase.co`). The following migrations have already been applied and are committed in `supabase/migrations/`:
 - `20261122130558_micky_xmd_initial_schema.sql`
 - `20261122130608_micky_xmd_security_and_indexes.sql`
+- `20261122131508_micky_xmd_bot_presence_options.sql`
 
 Do not apply these to another product's Supabase project. The schema includes profiles, KES wallets, wallet ledger, bot instances, group configuration, deleted-message cache, API keys and M-Pesa payment requests. RLS is enabled on all eight tables. Browser users cannot mutate wallets, transactions, bot session credentials or API keys.
 
