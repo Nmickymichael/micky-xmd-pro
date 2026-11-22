@@ -111,16 +111,18 @@
     $("qrStatus").textContent = "Requesting a temporary pairing session…";
     try {
       const data = await request("/pair", {method:"POST", body:JSON.stringify({phone_number:phone})});
-      const rawPairingCode = String(data.pairing_code || "");
-      currentCode = rawPairingCode.replace(/\D/g, "");
+      const rawPairingCode = String(data.pairing_code || "").trim();
+      // Baileys pairing codes may be returned with separators and can contain
+      // letters as well as digits. Normalize formatting without discarding letters.
+      currentCode = rawPairingCode.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
       currentSession = String(data.session_id || "").trim();
-      const validCode = /^\d{8}$/.test(currentCode);
+      const validCode = /^[A-Z0-9]{8}$/.test(currentCode);
       const validSession = /^MICKY~[A-Za-z0-9_-]{20,}$/.test(currentSession);
       if (!validCode || !validSession) {
         const missing = [!validCode ? "pairing code missing or not 8 digits" : "", !validSession ? "session ID missing or invalid" : ""].filter(Boolean).join("; ");
         throw new Error("Incomplete pairing response: " + missing + ". Please share the web-service log at this timestamp; do not share your session ID.");
       }
-      $("pairCode").textContent = currentCode.replace(/(\d{4})(\d{4})/, "$1 $2");
+      $("pairCode").textContent = currentCode.replace(/^(.{4})(.{4})$/, "$1 $2");
       $("sessionId").textContent = currentSession;
       $("pairResult").classList.add("show");
       $("qrStatus").textContent = "Pairing code generated. Complete linking in WhatsApp.";
