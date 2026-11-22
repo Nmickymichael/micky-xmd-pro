@@ -120,7 +120,7 @@ async function cleanupStalePairingRows(){
  else if(data?.length)logger.info({count:data.length},"Cleaned up stale WhatsApp pairing records");
 }
 cleanupStalePairingRows().catch(err=>logger.error({err},"Stale pairing cleanup failed at startup"));
-setInterval(async()=>{const cutoff=Date.now()-10*60*1000;for(const [botId,pair] of pendingPairings){if(pair.tokenShownAt<cutoff){pair.closing=true;try{pair.sock.end(undefined);}catch{}pendingPairings.delete(botId);await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",botId);}}},60_000).unref();
+setInterval(async()=>{const cutoff=Date.now()-10*60*1000;for(const [botId,pair] of pendingPairings){if(!pair.connected&&pair.tokenShownAt<cutoff){pair.closing=true;try{pair.sock.end(undefined);}catch{}pendingPairings.delete(botId);await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",botId);}}},60_000).unref();
 app.post("/api/auth/signup",async(req,res,next)=>{try{
  const {email,password}=z.object({email:z.string().email(),password:z.string().min(8)}).parse(req.body);
  const {data,error}=await createAuthClient().auth.signUp({email,password});if(error)throw error;
