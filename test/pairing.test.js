@@ -24,6 +24,7 @@ test("pairing code normalization preserves letters and validates eight character
 
 test("WhatsApp phone numbers normalize local Kenyan and international formats", () => {
   assert.equal(normalizeWhatsAppNumber("0712 345 678"), "254712345678");
+  assert.equal(normalizeWhatsAppNumber("254712345678"), "254712345678");
   assert.equal(normalizeWhatsAppNumber("+254 712-345-678"), "254712345678");
   assert.equal(normalizeWhatsAppNumber("+1 202 555 0123"), "12025550123");
   assert.throws(() => normalizeWhatsAppNumber("123"), /valid WhatsApp phone number/i);
