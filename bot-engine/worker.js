@@ -56,6 +56,7 @@ async function stopExpired(bot) {
   const worker = workers.get(bot.id);
   if (worker) {
     worker.stopping = true;
+    worker.expired = true;
     clearHeartbeat(worker);
     try { worker.socket?.end(undefined); } catch {}
   }
@@ -64,7 +65,7 @@ async function stopExpired(bot) {
 async function startBot(bot) {
   if (workers.has(bot.id)) return;
 
-  const worker = { socket: null, stopping: false, attempt: 0, heartbeatTimer: null };
+  const worker = { socket: null, stopping: false, expired: false, attempt: 0, heartbeatTimer: null };
   workers.set(bot.id, worker);
   log.info({ bot: bot.id }, "Starting WhatsApp worker");
 
@@ -234,11 +235,13 @@ async function reconcile() {
       worker.stopping = true;
       clearHeartbeat(worker);
       try { worker.socket?.end(undefined); } catch {}
-      const { error: stopError } = await admin
-        .from("bot_instances")
-        .update({ connection_status: "disconnected", bot_status: "stopped", is_active: false })
-        .eq("id", id);
-      if (stopError) log.warn({ err: stopError, bot: id }, "Could not persist inactive worker state");
+      if (!worker.expired) {
+        const { error: stopError } = await admin
+          .from("bot_instances")
+          .update({ connection_status: "disconnected", bot_status: "stopped", is_active: false })
+          .eq("id", id);
+        if (stopError) log.warn({ err: stopError, bot: id }, "Could not persist inactive worker state");
+      }
     }
   }
   for (const bot of active || []) {
