@@ -42,3 +42,11 @@ export function normalizePairingCode(value) {
   }
   return code;
 }
+
+export function createOnceAsync(action) {
+  let pending;
+  return (...args) => {
+    if (!pending) pending = Promise.resolve().then(() => action(...args));
+    return pending;
+  };
+}
