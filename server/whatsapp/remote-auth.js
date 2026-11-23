@@ -18,7 +18,7 @@ export async function createRemoteAuthState(botId) {
     const ciphertext = encryptJson(payload);
     const { error: saveError } = await admin
       .from("bot_instances")
-      .update({ auth_state_ciphertext: ciphertext, heartbeat_at: new Date().toISOString() })
+      .update({ auth_state_ciphertext: ciphertext })
       .eq("id", botId);
     if (saveError) throw saveError;
   };
