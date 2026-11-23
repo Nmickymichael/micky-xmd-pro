@@ -14,7 +14,7 @@ import pino from "pino";
 import QRCode from "qrcode";
 import { Boom } from "@hapi/boom";
 import { createRemoteAuthState } from "./remote-auth.js";
-import { createPairingCodeWaiter, normalizePairingCode } from "./whatsapp/pairing-code.js";
+import { createPairingCodeWaiter, normalizePairingCode, createOnceAsync } from "./whatsapp/pairing-code.js";
 import { normalizeWhatsAppNumber } from "./whatsapp/phone.js";
 
 const app=express();app.set("trust proxy",1);
@@ -182,15 +182,16 @@ app.post("/api/pair",authenticate,pairingLimiter,async(req,res,next)=>{
    stage="initialize_whatsapp_socket";
    const codeWaiter=createPairingCodeWaiter(55_000);
    const pending={sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false,restartAttempts:0,method:"phone",pairingCodeRequested:false,codeWaiter};
-   pending.startPairingCode=async()=>{
-    if(pending.pairingCodeRequested||pending.closing||pending.closed)return;
-    if(remote.state.creds.registered){codeWaiter.reject(new Error("This pairing session already contains registered WhatsApp credentials. Start a fresh session."));return;}
+   pending.startPairingCode=createOnceAsync(async()=>{
+    if(pending.closing||pending.closed)throw new Error("WhatsApp pairing session is no longer active.");
+    if(remote.state.creds.registered)throw new Error("This pairing session already contains registered WhatsApp credentials. Start a fresh session.");
     pending.pairingCodeRequested=true;
     try{
      const generated=await requestPairingCodeWithRecovery({botId:row.id,phone,requestId,phoneLast4});
      codeWaiter.resolve(generated);
-    }catch(pairingError){codeWaiter.reject(pairingError);}
-   };
+     return generated;
+    }catch(pairingError){codeWaiter.reject(pairingError);throw pairingError;}
+   });
    pendingPairings.set(row.id,pending);
    sock=attachPairingSocket({botId:row.id,remote,requestId,phoneLast4});
    stage="wait_for_baileys_pairing_ready_event";
