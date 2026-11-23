@@ -58,6 +58,14 @@ Both services must use Node.js 22+, the same Supabase project and the same `SESS
 
 The web service must use HTTPS in production. Configure Supabase Auth's Site URL/redirect allow-list to the final domain. Configure the Daraja callback through a trusted ingress that injects the callback secret header; do not put secrets in query strings or logs.
 
+## WhatsApp pairing lifecycle
+
+Phone-number pairing and QR pairing are separate fresh-session flows. For phone-number pairing, the web service waits for Baileys' first `connection.update` event containing `qr` and requests the code at that point. Do not add an arbitrary delay before `requestPairingCode()`; Baileys documents the QR update as the readiness trigger even when the QR itself is not displayed.
+
+QR refresh calls `POST /api/pair/qr` to create a new auth state and socket, then polls `GET /api/pair/qr` for the current image or a connected status. A QR image belongs to the in-memory web process and cannot survive a web-service restart; start a new QR session after a restart. Once WhatsApp linking completes, encrypted credentials are persisted in Supabase and the bot worker restores them through the shared remote-auth store.
+
+Pairing attempts are rate-limited. Do not repeatedly click the button while a request is pending. If WhatsApp closes the socket, the UI should show the server's safe error message; use request ID and timestamp to find matching server logs, never share the pairing code, session token, phone number or auth data.
+
 ## Security and product limitations
 - Session tokens are random opaque credentials. Only their SHA-256 hashes are stored in the database. The token is returned once to the signed-in user.
 - Baileys auth state is encrypted using AES-256-GCM before database persistence.
