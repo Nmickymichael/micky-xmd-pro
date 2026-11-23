@@ -313,4 +313,26 @@ app.post("/api/payments/mpesa-callback",async(req,res,next)=>{try{
  res.json({ResultCode:0,ResultDesc:"Accepted"});
 }catch(e){logger.error(e);res.status(500).json({ResultCode:1,ResultDesc:"Callback processing failed"});}});
 app.use((err,req,res,_next)=>{const status=err.name==="ZodError"?400:500;logger.error({err,message:err.message,method:req.method,path:req.path,status},"API request failed");res.status(status).json({error:status===400?err.issues?.[0]?.message||"Invalid request":"Request failed"});});
-const port=Number(process.env.PORT||3000);app.listen(port,()=>logger.info({port},"MICKY-XMD web/API process listening"));
+const port=Number(process.env.PORT||3000);
+const server=app.listen(port,()=>logger.info({port},"MICKY-XMD web/API process listening"));
+let shuttingDown=false;
+async function shutdown(signal){
+ if(shuttingDown)return;shuttingDown=true;
+ logger.info({signal},"Stopping MICKY-XMD web/API process gracefully");
+ const pending=[...pendingPairings.entries()].filter(([,pair])=>!pair.connected);
+ for(const [botId,pair] of pending){
+  pair.closing=true;
+  try{pair.sock?.end(undefined);}catch{}
+  pendingPairings.delete(botId);
+ }
+ await Promise.all(pending.map(async([botId])=>{
+  const {error}=await admin.from("bot_instances").update({
+   connection_status:"disconnected",bot_status:"stopped",is_active:false
+  }).eq("id",botId).eq("connection_status","pairing");
+  if(error)logger.warn({err:error,botId},"Could not persist pending-pairing shutdown state");
+ }));
+ await new Promise(resolve=>server.close(resolve));
+ process.exit(0);
+}
+process.once("SIGTERM",()=>void shutdown("SIGTERM"));
+process.once("SIGINT",()=>void shutdown("SIGINT"));
