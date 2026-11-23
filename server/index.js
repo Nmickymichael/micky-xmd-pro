@@ -66,13 +66,23 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
    if(code===DisconnectReason.restartRequired){
     if(p)p.connection="restarting";
     if(p)p.restartAttempts=(p.restartAttempts||0)+1;
-    if((p?.restartAttempts||0)>3){p.closed=true;logger.error({requestId,botId,disconnectCode:code},"WhatsApp pairing socket exceeded restart limit");return;}
+    if((p?.restartAttempts||0)>3){
+     p.closed=true;p.connection="closed";
+     const {error:stateError}=await admin.from("bot_instances").update({connection_status:"error",bot_status:"error",is_active:false}).eq("id",botId);
+     if(stateError)logger.warn({err:stateError,requestId,botId},"Could not persist exhausted pairing restart state");
+     logger.error({requestId,botId,disconnectCode:code},"WhatsApp pairing socket exceeded restart limit");return;
+    }
     logger.info({requestId,botId,disconnectCode:code,restartAttempt:p?.restartAttempts||1},"WhatsApp requested a socket restart after pairing; reconnecting with saved credentials");
     setTimeout(()=>{
      const current=pendingPairings.get(botId);
      if(!current||current.closing)return;
      try{attachPairingSocket({botId,remote,requestId,phoneLast4});}
-     catch(restartError){current.closed=true;logger.error({err:restartError,requestId,botId},"Could not restart WhatsApp pairing socket");}
+     catch(restartError){
+      current.closed=true;current.connection="closed";
+      admin.from("bot_instances").update({connection_status:"error",bot_status:"error",is_active:false}).eq("id",botId)
+       .then(({error:stateError})=>{if(stateError)logger.warn({err:stateError,requestId,botId},"Could not persist pairing restart failure");});
+      logger.error({err:restartError,requestId,botId},"Could not restart WhatsApp pairing socket");
+     }
     },500);
     return;
    }
