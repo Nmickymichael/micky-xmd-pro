@@ -8,7 +8,7 @@ Multi-tenant WhatsApp bot hosting platform built with Node.js 22+, Express, Supa
 - **Bot worker:** `npm run start:bot` — restores deployed WhatsApp sessions, handles commands and supervises reconnects.
 - **Database:** Supabase PostgreSQL/Auth — tenant data, wallets, transaction ledger, bot records and encrypted WhatsApp credentials.
 
-Both services must use the same Supabase project and `SESSION_ENCRYPTION_KEY`. Run one bot-worker replica until distributed worker leases are implemented.
+Both services must use the same Supabase project and `SESSION_ENCRYPTION_KEY`. Run one web/API replica while pairing is in progress because pending sockets are process-local. Run one bot-worker replica until distributed worker leases are implemented.
 
 ## WhatsApp pairing
 
