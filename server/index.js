@@ -22,6 +22,7 @@ app.use(helmet({contentSecurityPolicy:false,crossOriginEmbedderPolicy:false}));
 app.use(express.json({limit:"1mb"}));app.use(cookieParser());
 app.use(express.static(new URL("../public",import.meta.url).pathname));
 app.use("/api",rateLimit({windowMs:60_000,limit:100,standardHeaders:"draft-7",legacyHeaders:false}));
+const pairingLimiter=rateLimit({windowMs:15*60_000,limit:5,standardHeaders:"draft-7",legacyHeaders:false,message:{error:"Too many pairing attempts. Wait 15 minutes before trying again."}});
 const logger=pino({level:process.env.LOG_LEVEL||"info"});
 const pendingPairings=new Map();
 const phoneSchema=z.string().regex(/^(254|0)?[17]\d{8}$/);
@@ -162,7 +163,7 @@ app.get("/api/dashboard",authenticate,async(req,res,next)=>{try{
  ]);
  if(we)throw we;if(be)throw be;res.json({wallet:wallet||{balance:0,currency:"KES"},bots:bots||[]});
 }catch(e){next(e);}});
-app.post("/api/pair",authenticate,async(req,res,next)=>{
+app.post("/api/pair",authenticate,pairingLimiter,async(req,res,next)=>{
  const requestId=randomUUID();let stage="validate_request";let botId=null;let phoneLast4=null;
  try{
   const {phone_number}=z.object({phone_number:z.string().trim().min(8).max(24)}).parse(req.body);const phone=normalizeWhatsAppNumber(phone_number);phoneLast4=phone.slice(-4);
@@ -220,7 +221,7 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
   }
  }catch(err){logger.error({err,requestId,botId,phoneLast4,stage},"Pairing API request failed");next(err);}
 });
-app.post("/api/pair/qr",authenticate,async(req,res,next)=>{
+app.post("/api/pair/qr",authenticate,pairingLimiter,async(req,res,next)=>{
  const requestId=randomUUID();let botId=null;let phoneLast4=null;
  try{
   for(const [existingId,existing] of pendingPairings){
