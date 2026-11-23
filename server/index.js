@@ -32,7 +32,7 @@ const normalPhone=s=>{let v=s.replace(/\D/g,"");if(v.startsWith("0"))v="254"+v.s
 function attachPairingSocket({botId,remote,requestId,phoneLast4}){
  const sock=makeWASocket({auth:remote.state,logger:pino({level:"silent"}),printQRInTerminal:false,browser:["MICKY-XMD PRO","Chrome","1.0.0"],markOnlineOnConnect:false,connectTimeoutMs:60_000,keepAliveIntervalMs:30_000});
  const pending=pendingPairings.get(botId);
- if(pending)pending.sock=sock;
+ if(pending){pending.sock=sock;pending.connection="connecting";pending.closed=false;}
  sock.ev.on("creds.update",()=>remote.saveCreds().catch(err=>logger.error({err,requestId,botId},"Could not persist updated WhatsApp credentials")));
  sock.ev.on("connection.update",async update=>{
   if(update.qr){
@@ -64,6 +64,7 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
    const code=new Boom(error||new Error("WhatsApp socket closed")).output?.statusCode;
    if(p?.closing)return;
    if(code===DisconnectReason.restartRequired){
+    if(p)p.connection="restarting";
     if(p)p.restartAttempts=(p.restartAttempts||0)+1;
     if((p?.restartAttempts||0)>3){p.closed=true;logger.error({requestId,botId,disconnectCode:code},"WhatsApp pairing socket exceeded restart limit");return;}
     logger.info({requestId,botId,disconnectCode:code,restartAttempt:p?.restartAttempts||1},"WhatsApp requested a socket restart after pairing; reconnecting with saved credentials");
@@ -81,6 +82,9 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
    if(code===DisconnectReason.loggedOut){
     const {error:saveError}=await admin.from("bot_instances").update({connection_status:"logged_out",bot_status:"stopped",is_active:false,auth_state_ciphertext:null}).eq("id",botId);
     if(saveError)logger.error({err:saveError,requestId,botId},"Could not persist logged-out state");
+   }else{
+    const {error:stateError}=await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",botId);
+    if(stateError)logger.warn({err:stateError,requestId,botId,disconnectCode:code},"Could not persist disconnected pairing state");
    }
   }
  });
