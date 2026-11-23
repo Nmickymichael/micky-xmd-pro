@@ -55,8 +55,8 @@
       </div>
       <form id="pairForm">
         <label for="phone">WhatsApp phone number</label>
-        <input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="2547XXXXXXXX" pattern="254[17][0-9]{8}" required>
-        <div class="hint">Use international format without +, spaces or hyphens. Example: 254712345678.</div>
+        <input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="+254712345678 or 0712345678" required>
+        <div class="hint">Use your country code, or enter a local number. Example: +254712345678 or 0712345678.</div>
         <button class="btn primary full" id="generateBtn" type="submit">Generate pairing code →</button>
       </form>
       <div id="pairFeedback" class="muted" role="status" aria-live="polite" style="margin-top:12px;min-height:18px"></div>
@@ -105,7 +105,7 @@
   $("pairForm").addEventListener("submit", async event => {
     event.preventDefault();
     const phone = $("phone").value.trim();
-    if (!/^254[17]\d{8}$/.test(phone)) { toast("Enter a valid Kenyan mobile number, e.g. 254712345678."); return; }
+    if (!/^\+?[\d\s().-]{8,24}$/.test(phone)) { toast("Enter a valid phone number with its country code."); return; }
     const button = $("generateBtn");
     button.disabled = true; button.textContent = "Requesting secure pairing…";
     $("pairResult").classList.remove("show");
