@@ -234,6 +234,11 @@ async function reconcile() {
       worker.stopping = true;
       clearHeartbeat(worker);
       try { worker.socket?.end(undefined); } catch {}
+      const { error: stopError } = await admin
+        .from("bot_instances")
+        .update({ connection_status: "disconnected", bot_status: "stopped", is_active: false })
+        .eq("id", id);
+      if (stopError) log.warn({ err: stopError, bot: id }, "Could not persist inactive worker state");
     }
   }
   for (const bot of active || []) {
