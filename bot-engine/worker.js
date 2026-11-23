@@ -71,6 +71,7 @@ async function startBot(bot) {
   while (!worker.stopping) {
     try {
       const auth = await remoteAuth(bot.id);
+      if (worker.stopping) break;
       const socket = makeWASocket({
         auth: auth.state,
         logger: log.child({ bot: bot.id }),
