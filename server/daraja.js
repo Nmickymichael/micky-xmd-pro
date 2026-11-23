@@ -14,6 +14,6 @@ export async function stkPush({phone,amount,accountReference,description}){
 }
 export function verifyCallbackSecret(req){
  const expected=process.env.MPESA_CALLBACK_SECRET;if(!expected)return false;
- const got=req.get("x-mpesa-callback-secret")||String(req.query.secret||"");
+ const got=req.get("x-mpesa-callback-secret")||"";
  return got.length===expected.length&&crypto.timingSafeEqual(Buffer.from(got),Buffer.from(expected));
 }
