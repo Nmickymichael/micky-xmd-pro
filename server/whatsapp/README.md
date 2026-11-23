@@ -9,4 +9,4 @@ The two methods share encrypted remote auth persistence and connection lifecycle
 
 The browser only receives the one-time opaque session token. WhatsApp credentials remain encrypted in Supabase. QR strings and pairing codes are temporary and must never be logged or persisted as application data.
 
-A QR displayed by the web process is tied to that process's in-memory socket. If the web process restarts before linking finishes, the browser must start a fresh QR session. Once linking completes, the encrypted credentials are durable and the separate bot worker can restore them.
+A QR displayed by the web process is tied to that process's in-memory socket. If the web process restarts before linking finishes, the browser must start a fresh QR session. Once linking completes, the encrypted credentials are durable and the separate bot worker can restore them. An idle pairing socket is closed after ten minutes to release memory and connections; this does not erase the saved linked-device credentials or the one-time session-token hash.
