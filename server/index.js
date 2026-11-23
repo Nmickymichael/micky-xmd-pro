@@ -261,6 +261,7 @@ app.get("/api/pair/qr",authenticate,async(req,res,next)=>{try{
  if(!bot||!["pairing","connected"].includes(bot.connection_status))return res.status(404).json({error:"No active pairing request. Start a fresh QR session."});
  if(bot.connection_status==="connected")return res.json({connected:true,message:"WhatsApp account connected successfully."});
  const pending=pendingPairings.get(bot.id);if(!pending)return res.status(410).json({error:"The pairing service restarted. Start a fresh QR session."});
+ if(pending.connected)return res.json({connected:true,message:"WhatsApp account connected successfully."});
  if(pending.closed)return res.status(410).json({error:"WhatsApp pairing connection closed. Start a fresh QR session."});
  if(!pending.qr)return res.status(202).json({message:"QR is still being generated. Keep waiting.",connection:pending.connection||"connecting"});
  res.json({qr_data_url:pending.qr,connection:pending.connection||"connecting"});
