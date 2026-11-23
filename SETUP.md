@@ -54,7 +54,7 @@ Create two separate persistent Node services from this repository:
 - Web/API service: build `npm install`; start `npm run start:web`; health check `/health`.
 - Background worker: build `npm install`; start `npm run start:bot`.
 
-Both services must use Node.js 22+, the same Supabase project and the same `SESSION_ENCRYPTION_KEY`. The worker does not need Daraja credentials. Do not run multiple worker replicas until distributed leases/locking are implemented; otherwise more than one worker may attempt to own the same WhatsApp session.
+Both services must use Node.js 22+, the same Supabase project and the same `SESSION_ENCRYPTION_KEY`. The worker does not need Daraja credentials. Run one web/API replica while pairing is in progress because pending pairing sockets are held in that process. Do not run multiple worker replicas until distributed leases/locking are implemented; otherwise more than one worker may attempt to own the same WhatsApp session.
 
 The web service must use HTTPS in production. Configure Supabase Auth's Site URL/redirect allow-list to the final domain. Configure the Daraja callback through a trusted ingress that injects the callback secret header; do not put secrets in query strings or logs.
 
