@@ -98,7 +98,7 @@
       ...options
     });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.message || body.error || `Request failed (${response.status})`);
+    if (!response.ok) { const reason = body.message || body.error || `Request failed (${response.status})`; throw new Error(body.stage ? `${reason} · Stage: ${body.stage}` : reason); }
     return body;
   }
   $("year").textContent = new Date().getFullYear();
