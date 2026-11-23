@@ -59,7 +59,7 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
    else logger.info({requestId,botId,phoneLast4},"WhatsApp account paired successfully");
   }
   if(update.connection==="close"){
-   const p=pendingPairings.get(botId);
+   const p=pendingPairings.get(botId)||pending;
    const error=update.lastDisconnect?.error;
    if(p){p.connection="close";p.lastError=error?.message||"WhatsApp socket closed";}
    const code=new Boom(error||new Error("WhatsApp socket closed")).output?.statusCode;
