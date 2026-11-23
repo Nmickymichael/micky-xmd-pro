@@ -149,7 +149,19 @@ async function cleanupStalePairingRows(){
  else if(data?.length)logger.info({count:data.length},"Cleaned up stale WhatsApp pairing records");
 }
 cleanupStalePairingRows().catch(err=>logger.error({err},"Stale pairing cleanup failed at startup"));
-setInterval(async()=>{const cutoff=Date.now()-10*60*1000;for(const [botId,pair] of pendingPairings){if(!pair.connected&&pair.tokenShownAt<cutoff){pair.closing=true;try{pair.sock.end(undefined);}catch{}pendingPairings.delete(botId);await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",botId);}}},60_000).unref();
+setInterval(async()=>{
+ const cutoff=Date.now()-10*60*1000;
+ for(const [botId,pair] of pendingPairings){
+  if(pair.tokenShownAt>=cutoff)continue;
+  const wasConnected=pair.connected;
+  pair.closing=true;try{pair.sock?.end(undefined);}catch{}
+  pendingPairings.delete(botId);
+  if(!wasConnected){
+   const {error}=await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",botId);
+   if(error)logger.warn({err:error,botId},"Could not persist expired pending pairing");
+  }
+ }
+},60_000).unref();
 app.post("/api/auth/signup",async(req,res,next)=>{try{
  const {email,password}=z.object({email:z.string().email(),password:z.string().min(8)}).parse(req.body);
  const {data,error}=await createAuthClient().auth.signUp({email,password});if(error)throw error;
@@ -184,7 +196,15 @@ app.post("/api/pair",authenticate,pairingLimiter,async(req,res,next)=>{
  try{
   const {phone_number}=z.object({phone_number:z.string().trim().min(8).max(24)}).parse(req.body);const phone=normalizeWhatsAppNumber(phone_number);phoneLast4=phone.slice(-4);
   stage="close_previous_pending_pairings";
-  for(const [existingId,existing] of pendingPairings){if(existing.userId===req.user.id&&!existing.connected){existing.closing=true;try{existing.sock.end(undefined);}catch{}pendingPairings.delete(existingId);const {error:closeError}=await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",existingId);if(closeError)logger.warn({err:closeError,requestId,botId:existingId},"Could not mark previous pairing as disconnected");}}
+  for(const [existingId,existing] of pendingPairings){
+   if(existing.userId!==req.user.id)continue;
+   existing.closing=true;try{existing.sock?.end(undefined);}catch{}
+   pendingPairings.delete(existingId);
+   if(!existing.connected){
+    const {error:closeError}=await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",existingId);
+    if(closeError)logger.warn({err:closeError,requestId,botId:existingId},"Could not mark previous pairing as disconnected");
+   }
+  }
   stage="create_bot_record";
   const sessionToken=randomSessionToken(),tokenHash=sha256(sessionToken);
   const {data:row,error}=await admin.from("bot_instances").insert({user_id:req.user.id,bot_name:"My MICKY-XMD Bot",session_id_hash:tokenHash,session_last4:sessionToken.slice(-4),whatsapp_number:phone,connection_status:"pairing",bot_status:"stopped",is_active:false,metadata:{pairing_requested_at:new Date().toISOString(),pairing_request_id:requestId}}).select("id").single();
@@ -247,11 +267,10 @@ app.post("/api/pair/qr",authenticate,pairingLimiter,async(req,res,next)=>{
  const requestId=randomUUID();let botId=null;let phoneLast4=null;
  try{
   for(const [existingId,existing] of pendingPairings){
-   if(existing.userId===req.user.id&&!existing.connected){
-    existing.closing=true;try{existing.sock?.end(undefined);}catch{}
-    pendingPairings.delete(existingId);
-    await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",existingId);
-   }
+   if(existing.userId!==req.user.id)continue;
+   existing.closing=true;try{existing.sock?.end(undefined);}catch{}
+   pendingPairings.delete(existingId);
+   if(!existing.connected)await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",existingId);
   }
   const sessionToken=randomSessionToken(),tokenHash=sha256(sessionToken);
   const {data:row,error}=await admin.from("bot_instances").insert({
