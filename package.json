@@ -10,7 +10,8 @@
     "start:web": "node server/index.js",
     "start:bot": "node bot-engine/worker.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "check": "find server bot-engine test -name '*.js' -type f -print0 | xargs -0 -n1 node --check"
   },
   "dependencies": {
     "@hapi/boom": "9.1.3",
