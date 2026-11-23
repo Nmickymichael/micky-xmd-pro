@@ -76,6 +76,7 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
     return;
    }
    if(p)p.closed=true;
+   if(p?.method==="phone"&&!p.pairingCodeRequested)p.codeWaiter?.reject(new Error("WhatsApp closed the connection before it became ready to request a pairing code."));
    logger.warn({requestId,botId,disconnectCode:code,disconnectMessage:error?.message},"WhatsApp pairing socket closed");
    if(code===DisconnectReason.loggedOut){
     const {error:saveError}=await admin.from("bot_instances").update({connection_status:"logged_out",bot_status:"stopped",is_active:false,auth_state_ciphertext:null}).eq("id",botId);
@@ -176,8 +177,10 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
    stage="initialize_remote_auth";
    const remote=await createRemoteAuthState(row.id);
    stage="initialize_whatsapp_socket";
+   stage="persist_initial_auth";
+   await remote.saveCreds();
    const codeWaiter=createPairingCodeWaiter(55_000);
-   const pending={sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false,restartAttempts:0,method:"phone",pairingCodeRequested:false};
+   const pending={sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false,restartAttempts:0,method:"phone",pairingCodeRequested:false,codeWaiter};
    pending.startPairingCode=async()=>{
     if(pending.pairingCodeRequested||pending.closing||pending.closed)return;
     if(remote.state.creds.registered){codeWaiter.reject(new Error("This pairing session already contains registered WhatsApp credentials. Start a fresh session."));return;}
@@ -189,8 +192,6 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
    };
    pendingPairings.set(row.id,pending);
    sock=attachPairingSocket({botId:row.id,remote,requestId,phoneLast4});
-   stage="persist_initial_auth";
-   await remote.saveCreds();
    stage="wait_for_baileys_pairing_ready_event";
    // Baileys emits connection.update with qr when the socket is ready.
    // The socket handler above requests the code once, at that point.
