@@ -25,6 +25,7 @@ app.use("/api",rateLimit({windowMs:60_000,limit:100,standardHeaders:"draft-7",le
 const pairingLimiter=rateLimit({windowMs:15*60_000,limit:5,standardHeaders:"draft-7",legacyHeaders:false,message:{error:"Too many pairing attempts. Wait 15 minutes before trying again."}});
 const logger=pino({level:process.env.LOG_LEVEL||"info"});
 const pendingPairings=new Map();
+const pairingRequestsInFlight=new Set();
 const phoneSchema=z.string().regex(/^(254|0)?[17]\d{8}$/);
 const normalPhone=s=>{let v=s.replace(/\D/g,"");if(v.startsWith("0"))v="254"+v.slice(1);if(v.startsWith("7")||v.startsWith("1"))v="254"+v;return v;};
 // Phone-number linking is triggered by Baileys' QR readiness update;
@@ -177,6 +178,8 @@ app.get("/api/dashboard",authenticate,async(req,res,next)=>{try{
  if(we)throw we;if(be)throw be;res.json({wallet:wallet||{balance:0,currency:"KES"},bots:bots||[]});
 }catch(e){next(e);}});
 app.post("/api/pair",authenticate,pairingLimiter,async(req,res,next)=>{
+ if(pairingRequestsInFlight.has(req.user.id))return res.status(409).json({error:"A WhatsApp pairing request is already being created. Wait for it to finish."});
+ pairingRequestsInFlight.add(req.user.id);
  const requestId=randomUUID();let stage="validate_request";let botId=null;let phoneLast4=null;
  try{
   const {phone_number}=z.object({phone_number:z.string().trim().min(8).max(24)}).parse(req.body);const phone=normalizeWhatsAppNumber(phone_number);phoneLast4=phone.slice(-4);
@@ -236,8 +239,11 @@ app.post("/api/pair",authenticate,pairingLimiter,async(req,res,next)=>{
    return res.status(502).json({error:"WhatsApp pairing code unavailable",message:safeMessage,stage:failedStage});
   }
  }catch(err){logger.error({err,requestId,botId,phoneLast4,stage},"Pairing API request failed");next(err);}
+ finally{pairingRequestsInFlight.delete(req.user.id);}
 });
 app.post("/api/pair/qr",authenticate,pairingLimiter,async(req,res,next)=>{
+ if(pairingRequestsInFlight.has(req.user.id))return res.status(409).json({error:"A WhatsApp pairing request is already being created. Wait for it to finish."});
+ pairingRequestsInFlight.add(req.user.id);
  const requestId=randomUUID();let botId=null;let phoneLast4=null;
  try{
   for(const [existingId,existing] of pendingPairings){
@@ -268,7 +274,7 @@ app.post("/api/pair/qr",authenticate,pairingLimiter,async(req,res,next)=>{
    await admin.from("bot_instances").update({connection_status:"error",bot_status:"error",is_active:false,metadata:{pairing_method:"qr",pairing_failed_at:new Date().toISOString(),pairing_request_id:requestId}}).eq("id",botId);
   }
   next(err);
- }
+ }finally{pairingRequestsInFlight.delete(req.user.id);}
 });
 app.get("/api/pair/qr",authenticate,async(req,res,next)=>{try{
  const {data:bot,error}=await admin.from("bot_instances").select("id,connection_status").eq("user_id",req.user.id).order("created_at",{ascending:false}).limit(1).maybeSingle();
