@@ -52,7 +52,9 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
    }
   }
   if(update.connection==="open"){
-   const activePair=pendingPairings.get(botId);if(activePair){activePair.restartAttempts=0;activePair.connected=true;activePair.connection="open";activePair.qr=null;}
+   const activePair=pendingPairings.get(botId)||pending;
+   if(activePair?.closing)return;
+   if(activePair){activePair.restartAttempts=0;activePair.connected=true;activePair.connection="open";activePair.qr=null;}
    const jid=sock.user?.id||null;
    const {error}=await admin.from("bot_instances").update({connection_status:"connected",bot_status:"stopped",whatsapp_jid:jid,connected_at:new Date().toISOString(),auth_state_ciphertext:remote.exportEncrypted(),metadata:{pairing_completed_at:new Date().toISOString()}}).eq("id",botId);
    if(error)logger.error({err:error,requestId,botId},"Failed to persist paired WhatsApp session");
