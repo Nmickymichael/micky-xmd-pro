@@ -173,13 +173,14 @@ app.post("/api/pair",authenticate,pairingLimiter,async(req,res,next)=>{
   const {data:row,error}=await admin.from("bot_instances").insert({user_id:req.user.id,bot_name:"My MICKY-XMD Bot",session_id_hash:tokenHash,session_last4:sessionToken.slice(-4),whatsapp_number:phone,connection_status:"pairing",bot_status:"stopped",is_active:false,metadata:{pairing_requested_at:new Date().toISOString(),pairing_request_id:requestId}}).select("id").single();
   if(error)throw error;botId=row.id;
   let sock;
+  let codeWaiter;
   try{
    stage="initialize_remote_auth";
    const remote=await createRemoteAuthState(row.id);
    stage="persist_initial_auth";
    await remote.saveCreds();
    stage="initialize_whatsapp_socket";
-   const codeWaiter=createPairingCodeWaiter(55_000);
+   codeWaiter=createPairingCodeWaiter(55_000);
    const pending={sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false,restartAttempts:0,method:"phone",pairingCodeRequested:false,codeWaiter};
    pending.startPairingCode=createOnceAsync(async()=>{
     if(pending.closing||pending.closed)throw new Error("WhatsApp pairing session is no longer active.");
@@ -204,6 +205,7 @@ app.post("/api/pair",authenticate,pairingLimiter,async(req,res,next)=>{
    logger.info({requestId,botId:row.id,phoneLast4,codeLength:normalizedCode.length,sessionTokenPresent:true},"WhatsApp pairing response generated");
    res.json({ok:true,pairing_code:normalizedCode,session_id:sessionToken,bot_id:row.id,message:"Enter the pairing code in WhatsApp. Copy the session ID now; it is shown only once."});
   }catch(err){
+   codeWaiter?.cancel();
    const failedStage=stage;const pending=pendingPairings.get(row.id);if(pending){pending.closing=true;pendingPairings.delete(row.id);}
    try{(pending?.sock||sock)?.end(undefined);}catch{}
    const {error:stateError}=await admin.from("bot_instances").update({connection_status:"error",bot_status:"error",is_active:false,metadata:{pairing_failed_at:new Date().toISOString(),pairing_request_id:requestId,pairing_failure_stage:failedStage}}).eq("id",row.id);
