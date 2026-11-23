@@ -195,7 +195,7 @@ app.post("/api/pair",authenticate,pairingLimiter,async(req,res,next)=>{
  const requestId=randomUUID();let stage="validate_request";let botId=null;let phoneLast4=null;
  try{
   const {phone_number}=z.object({phone_number:z.string().trim().min(8).max(24)}).parse(req.body);const phone=normalizeWhatsAppNumber(phone_number);phoneLast4=phone.slice(-4);
-  stage="close_previous_pending_pairings";
+  stage="close_previous_pairing_sockets";
   for(const [existingId,existing] of pendingPairings){
    if(existing.userId!==req.user.id)continue;
    existing.closing=true;try{existing.sock?.end(undefined);}catch{}
