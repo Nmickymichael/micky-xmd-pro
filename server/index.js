@@ -14,6 +14,8 @@ import pino from "pino";
 import QRCode from "qrcode";
 import { Boom } from "@hapi/boom";
 import { createRemoteAuthState } from "./remote-auth.js";
+import { createPairingCodeWaiter, normalizePairingCode } from "./whatsapp/pairing-code.js";
+import { normalizeWhatsAppNumber } from "./whatsapp/phone.js";
 
 const app=express();app.set("trust proxy",1);
 app.use(helmet({contentSecurityPolicy:false,crossOriginEmbedderPolicy:false}));
@@ -34,8 +36,19 @@ function attachPairingSocket({botId,remote,requestId,phoneLast4}){
  sock.ev.on("creds.update",()=>remote.saveCreds().catch(err=>logger.error({err,requestId,botId},"Could not persist updated WhatsApp credentials")));
  sock.ev.on("connection.update",async update=>{
   if(update.qr){
-   try{const p=pendingPairings.get(botId);if(p)p.qr=await QRCode.toDataURL(update.qr,{width:280,margin:1});}
-   catch(err){logger.warn({err,requestId,botId},"Could not render WhatsApp QR code");}
+   const p=pendingPairings.get(botId);
+   if(p?.method==="phone"){
+    // Baileys emits this event when the socket is ready for pairing-code requests.
+    // A fixed sleep is not a reliable readiness signal.
+    p.startPairingCode?.().catch(err=>logger.error({err,requestId,botId},"Phone-number pairing request failed after readiness event"));
+   }else if(p?.method==="qr"){
+    const revision=(p.qrRevision||0)+1;p.qrRevision=revision;
+    try{
+     const rendered=await QRCode.toDataURL(update.qr,{width:280,margin:1});
+     const current=pendingPairings.get(botId);
+     if(current===p&&current.sock===sock&&current.qrRevision===revision)current.qr=rendered;
+    }catch(err){logger.warn({err,requestId,botId},"Could not render WhatsApp QR code");}
+   }
   }
   if(update.connection==="open"){
    const activePair=pendingPairings.get(botId);if(activePair){activePair.restartAttempts=0;activePair.connected=true;activePair.connection="open";activePair.qr=null;}
@@ -151,7 +164,7 @@ app.get("/api/dashboard",authenticate,async(req,res,next)=>{try{
 app.post("/api/pair",authenticate,async(req,res,next)=>{
  const requestId=randomUUID();let stage="validate_request";let botId=null;let phoneLast4=null;
  try{
-  const {phone_number}=z.object({phone_number:phoneSchema}).parse(req.body);const phone=normalPhone(phone_number);phoneLast4=phone.slice(-4);
+  const {phone_number}=z.object({phone_number:z.string().trim().min(8).max(24)}).parse(req.body);const phone=normalizeWhatsAppNumber(phone_number);phoneLast4=phone.slice(-4);
   stage="close_previous_pending_pairings";
   for(const [existingId,existing] of pendingPairings){if(existing.userId===req.user.id&&!existing.connected){existing.closing=true;try{existing.sock.end(undefined);}catch{}pendingPairings.delete(existingId);const {error:closeError}=await admin.from("bot_instances").update({connection_status:"disconnected",bot_status:"stopped",is_active:false}).eq("id",existingId);if(closeError)logger.warn({err:closeError,requestId,botId:existingId},"Could not mark previous pairing as disconnected");}}
   stage="create_bot_record";
@@ -163,22 +176,28 @@ app.post("/api/pair",authenticate,async(req,res,next)=>{
    stage="initialize_remote_auth";
    const remote=await createRemoteAuthState(row.id);
    stage="initialize_whatsapp_socket";
-   pendingPairings.set(row.id,{sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false,restartAttempts:0});
+   const codeWaiter=createPairingCodeWaiter(55_000);
+   const pending={sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false,restartAttempts:0,method:"phone",pairingCodeRequested:false};
+   pending.startPairingCode=async()=>{
+    if(pending.pairingCodeRequested||pending.closing||pending.closed)return;
+    if(remote.state.creds.registered){codeWaiter.reject(new Error("This pairing session already contains registered WhatsApp credentials. Start a fresh session."));return;}
+    pending.pairingCodeRequested=true;
+    try{
+     const generated=await requestPairingCodeWithRecovery({botId:row.id,phone,requestId,phoneLast4});
+     codeWaiter.resolve(generated);
+    }catch(pairingError){codeWaiter.reject(pairingError);}
+   };
+   pendingPairings.set(row.id,pending);
    sock=attachPairingSocket({botId:row.id,remote,requestId,phoneLast4});
    stage="persist_initial_auth";
    await remote.saveCreds();
-   stage="request_whatsapp_pairing_code";
-   // Give the WhatsApp handshake time to initialize. requestPairingCode()
-   // internally waits for Baileys' WebSocket to open; do not gate it on a
-   // separately subscribed connection.update event (which can miss "connecting").
-   await new Promise(resolve=>setTimeout(resolve,5_000));
-   if(pendingPairings.get(row.id)?.closed)throw new Error("WhatsApp closed the connection before the pairing request was ready. Please retry.");
-   // A 515 restart can replace the socket while the initial 5-second
-   // handshake delay is running. Always request the code on the newest socket.
-   const pairingCode=await requestPairingCodeWithRecovery({botId:row.id,phone,requestId,phoneLast4});
+   stage="wait_for_baileys_pairing_ready_event";
+   // Baileys emits connection.update with qr when the socket is ready.
+   // The socket handler above requests the code once, at that point.
+   const pairingCode=await codeWaiter.promise;
+   codeWaiter.cancel();
    stage="validate_pairing_response";
-   const normalizedCode=String(pairingCode||"").replace(/[^A-Za-z0-9]/g,"").toUpperCase();
-   if(!/^[A-Z0-9]{8}$/.test(normalizedCode))throw new Error("WhatsApp returned a pairing code in an unexpected format");
+   const normalizedCode=normalizePairingCode(pairingCode);
    if(!/^MICKY~[A-Za-z0-9_-]{20,}$/.test(sessionToken))throw new Error("Session token generation failed validation");
    logger.info({requestId,botId:row.id,phoneLast4,codeLength:normalizedCode.length,sessionTokenPresent:true},"WhatsApp pairing response generated");
    res.json({ok:true,pairing_code:normalizedCode,session_id:sessionToken,bot_id:row.id,message:"Enter the pairing code in WhatsApp. Copy the session ID now; it is shown only once."});
@@ -218,7 +237,7 @@ app.post("/api/pair/qr",authenticate,async(req,res,next)=>{
   }).select("id").single();
   if(error)throw error;botId=row.id;
   const remote=await createRemoteAuthState(row.id);
-  pendingPairings.set(row.id,{sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,closing:false,closed:false,connected:false,connection:"connecting",lastError:null,restartAttempts:0,method:"qr"});
+  pendingPairings.set(row.id,{sock:null,remote,userId:req.user.id,tokenShownAt:Date.now(),qr:null,qrRevision:0,closing:false,closed:false,connected:false,connection:"connecting",lastError:null,restartAttempts:0,method:"qr"});
   const sock=attachPairingSocket({botId:row.id,remote,requestId,phoneLast4});
   await remote.saveCreds();
   logger.info({requestId,botId:row.id,method:"qr"},"Started fresh WhatsApp QR pairing session");
