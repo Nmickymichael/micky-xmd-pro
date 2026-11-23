@@ -27,9 +27,8 @@ const logger=pino({level:process.env.LOG_LEVEL||"info"});
 const pendingPairings=new Map();
 const phoneSchema=z.string().regex(/^(254|0)?[17]\d{8}$/);
 const normalPhone=s=>{let v=s.replace(/\D/g,"");if(v.startsWith("0"))v="254"+v.slice(1);if(v.startsWith("7")||v.startsWith("1"))v="254"+v;return v;};
-// Pairing-code requests must use Baileys' own WebSocket-open wait. A separate
-// connection.update listener can miss the initial "connecting" event because
-// makeWASocket starts connecting before it returns the socket.
+// Phone-number linking is triggered by Baileys' QR readiness update;
+// QR linking renders each current QR update into a short-lived browser image.
 function attachPairingSocket({botId,remote,requestId,phoneLast4}){
  const sock=makeWASocket({auth:remote.state,logger:pino({level:"silent"}),printQRInTerminal:false,browser:["MICKY-XMD PRO","Chrome","1.0.0"],markOnlineOnConnect:false,connectTimeoutMs:60_000,keepAliveIntervalMs:30_000});
  const pending=pendingPairings.get(botId);
